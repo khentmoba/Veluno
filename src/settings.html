@@ -60,7 +60,7 @@ select { font:inherit; font-size:13px; color:var(--text); background:var(--activ
 </section>
 
 <section data-section="privacy" data-label="Privacy and security" data-icon="M6 11V8a6 6 0 0 1 12 0v3M5 11h14v10H5z">
-<div class="row"><div><h2>Block ads and trackers</h2><p>Runs uBlock Origin Lite in every tab. Turning this on or off applies after you restart Veluno.</p></div><button class="switch" role="switch" id="ad-blocker" aria-label="Block ads and trackers"></button></div>
+<div class="row"><div><h2>Block ads and trackers</h2><p>Uses Brave's ad blocking engine and Brave's default filter lists, plus uBlock Origin. Turning this on or off applies after you restart Veluno.</p><p id="ad-lists"></p></div><button class="switch" role="switch" id="ad-blocker" aria-label="Block ads and trackers"></button></div>
 <div class="row"><div><h2>Save browsing history</h2><p>Keeps the pages you visit so you can find them again. Open it from the menu or with Ctrl + H.</p></div><button class="switch" role="switch" id="save-history" aria-label="Save browsing history"></button></div>
 <h2>Tracking prevention</h2>
 <div class="choices three" id="tracking" role="radiogroup" aria-label="Tracking prevention"></div>
@@ -81,9 +81,9 @@ select { font:inherit; font-size:13px; color:var(--text); background:var(--activ
 </section>
 
 <section data-section="extensions" data-label="Extensions" data-icon="M10 4h4v3h3a1 1 0 0 1 1 1v3h-3v2h3v3a1 1 0 0 1-1 1h-3v-3h-2v3H8a1 1 0 0 1-1-1v-3h3v-2H7V8a1 1 0 0 1 1-1h2z">
-<div class="row"><div><h2>uBlock Origin Lite</h2><p id="ublock-detail"></p></div><span class="pill" id="ublock-pill"></span><button class="btn" id="ublock-action" data-send="install_ad_blocker" hidden>Install</button></div>
+<div class="row"><div><h2>uBlock Origin</h2><p id="ublock-detail"></p></div><span class="pill" id="ublock-pill"></span><button class="btn" id="ublock-action" data-send="install_ad_blocker" hidden>Install</button></div>
 <div class="row"><div><h2>More extensions</h2><p>Veluno loads any unpacked Chromium extension folder placed in:<br><code id="extensions-folder"></code><br>Restart Veluno after adding one.</p></div><button class="btn" data-send="open_extensions_folder">Open folder</button></div>
-<p class="note">uBlock Origin Lite is the Manifest V3 edition of uBlock Origin. The original uBlock Origin is a Manifest V2 extension, which current WebView2 no longer runs.</p>
+<p class="note">uBlock Origin keeps its filter lists up to date on its own, and Veluno installs new versions when you restart.</p>
 </section>
 
 <section data-section="shortcuts" data-label="Keyboard Shortcuts" data-icon="M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M8 14h8">
@@ -203,6 +203,14 @@ function renderExtension() {
  $('ublock-pill').textContent=pill[0]; $('ublock-pill').className='pill '+pill[1]; $('ublock-detail').textContent=detail;
  $('ublock-action').hidden=!action; $('ublock-action').textContent=action;
 }
+function renderAdLists() {
+ const updated=data.adblock_updated;
+ if(!data.settings.ad_blocker) { $('ad-lists').textContent=''; return; }
+ if(!updated) { $('ad-lists').textContent='Downloading Brave\u2019s filter lists\u2026'; return; }
+ const days=Math.floor((Date.now()/1000-updated)/86400);
+ $('ad-lists').textContent='Filter lists updated '+(days<1?'today':days===1?'yesterday':days+' days ago')+'. They refresh every day.';
+}
+renderAdLists();
 $('ublock-action').addEventListener('click',()=>{ data.ublock='installing'; renderExtension(); });
 renderExtension();
 window.showSection=id=>{ if(!sections.some(section=>section.dataset.section===id))return; $('find').value=''; show(id); };
