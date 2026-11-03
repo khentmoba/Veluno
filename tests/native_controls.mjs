@@ -88,7 +88,7 @@ export async function checkBrowserControls(sidebar, command, origin, port, artif
   await until(()=>sidebar.evaluate(`currentState.tabs.find(t=>t.id===${a}).is_sleeping`),'sleep muted tab');
   await command('switch_tab',{id:a});
   const awakened=await connect(target=>target.url===origin+'/controls-a',port);
-  await until(()=>awakened.evaluate('document.readyState==="complete"'),'wake muted tab');
+  await until(()=>awakened.evaluate(`location.href===${JSON.stringify(origin+'/controls-a')}&&document.readyState==="complete"`),'wake muted tab');
   await awakened.call('Runtime.evaluate',{expression:'window.recreatedAudio=new AudioContext();window.recreatedTone=recreatedAudio.createOscillator();recreatedTone.connect(recreatedAudio.destination);recreatedTone.start();recreatedAudio.resume();true',userGesture:true});
   await until(()=>sidebar.evaluate(`currentState.tabs.find(t=>t.id===${a}).is_playing_audio`),'audio event from recreated view');
   assert.equal(await sidebar.evaluate(`currentState.tabs.find(t=>t.id===${a}).is_muted`),true,'native mute is reapplied before loading a recreated page');

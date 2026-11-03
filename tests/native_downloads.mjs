@@ -36,7 +36,7 @@ try {
     const command = (action, payload = {}) => sidebar.evaluate(`Veluno.send(${JSON.stringify(action)},${JSON.stringify(payload)});true`);
     await command('new_tab', { url: origin + '/download-source' });
     const source = await connect(page => page.url === origin + '/download-source', contentPort);
-    await until(() => source.evaluate('document.readyState==="complete"'), 'source page');
+    await until(() => source.evaluate(`location.href===${JSON.stringify(origin + '/download-source')}&&document.readyState==="complete"`), 'source page');
     await until(() => sidebar.evaluate(`currentState.tabs.some(t=>t.url===${JSON.stringify(origin + '/download-source')}&&!t.is_loading)`), 'source committed');
     const sourceId = await sidebar.evaluate('currentState.active_tab_id');
     await source.evaluate(`document.getElementById('note').value='Keep my draft';true`);
