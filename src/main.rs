@@ -1,5 +1,6 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod adblock;
 mod app;
 mod desktop;
 mod extensions;

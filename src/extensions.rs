@@ -1,17 +1,27 @@
 use crate::{profile, updater};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static INSTALLING: AtomicBool = AtomicBool::new(false);
 static FAILED: AtomicBool = AtomicBool::new(false);
 
-const RELEASE_API: &str = "https://api.github.com/repos/uBlockOrigin/uBOL-home/releases/latest";
-const DOWNLOAD_PREFIX: &str = "https://github.com/uBlockOrigin/uBOL-home/releases/download/";
+const RELEASE_API: &str = "https://api.github.com/repos/gorhill/uBlock/releases/latest";
+const DOWNLOAD_PREFIX: &str = "https://github.com/gorhill/uBlock/releases/download/";
+
+/// Lists uBlock Origin ships switched off that Brave turns on by default: cookie notices,
+/// mobile app banners, and tracking parameters in links.
+const EXTRA_LISTS: [&str; 4] = [
+    "fanboy-cookiemonster",
+    "ublock-cookies-easylist",
+    "adguard-mobile-app-banners",
+    "adguard-spyware-url",
+];
 
 #[derive(Deserialize)]
 struct Release {
+    tag_name: String,
     assets: Vec<Asset>,
 }
 
@@ -118,7 +128,19 @@ fn sha256_bytes(input: &[u8]) -> [u8; 32] {
 }
 
 fn ublock_directory() -> PathBuf {
+    directory().join("ublock-origin")
+}
+
+/// Earlier Veluno versions installed uBlock Origin Lite here.
+fn lite_directory() -> PathBuf {
     directory().join("ublock-origin-lite")
+}
+
+/// WebView2 holds the installed copy open, so a newer release waits here until the next start.
+fn pending_directory() -> PathBuf {
+    profile::directory()
+        .join("extensions-pending")
+        .join("ublock-origin")
 }
 
 pub fn ublock_installed() -> bool {
@@ -148,24 +170,100 @@ pub fn status() -> &'static str {
     }
 }
 
+/// Runs before any tab exists. Swaps in a staged update, and retires uBlock Origin Lite once
+/// uBlock Origin can replace it, so upgraded profiles are never left without either.
+pub fn prepare() {
+    let pending = pending_directory();
+    if pending.join("manifest.json").is_file() {
+        let previous = profile::directory().join("extensions-previous");
+        let _ = std::fs::remove_dir_all(&previous);
+        let _ = std::fs::create_dir_all(directory());
+        let moved =
+            !ublock_directory().exists() || std::fs::rename(ublock_directory(), &previous).is_ok();
+        if moved && std::fs::rename(&pending, ublock_directory()).is_err() {
+            let _ = std::fs::rename(&previous, ublock_directory());
+        }
+        let _ = std::fs::remove_dir_all(&previous);
+        let _ = std::fs::remove_dir_all(&pending);
+    }
+    if ublock_installed() {
+        let _ = std::fs::remove_dir_all(lite_directory());
+    }
+}
+
 /// Downloads in the background unless already installed or in progress.
 pub fn install_in_background(done: impl FnOnce(Result<(), String>) + Send + 'static) {
     if ublock_installed() || INSTALLING.swap(true, Ordering::SeqCst) {
         return;
     }
     std::thread::spawn(move || {
-        let result = install_ublock();
+        let result = download_ublock(&ublock_directory(), None).map(|_| ());
         FAILED.store(result.is_err(), Ordering::SeqCst);
         INSTALLING.store(false, Ordering::SeqCst);
         done(result);
     });
 }
 
-/// uBlock Origin Lite is the MV3 build; WebView2's Chromium no longer runs MV2 extensions.
-fn install_ublock() -> Result<(), String> {
-    if ublock_installed() {
-        return Ok(());
+/// Stages a newer uBlock Origin release for the next start. Its filter lists update on their own.
+pub fn update_in_background() {
+    if !ublock_installed() || INSTALLING.swap(true, Ordering::SeqCst) {
+        return;
     }
+    std::thread::spawn(|| {
+        let _ = download_ublock(&pending_directory(), installed_version());
+        INSTALLING.store(false, Ordering::SeqCst);
+    });
+}
+
+fn installed_version() -> Option<String> {
+    let manifest = std::fs::read_to_string(ublock_directory().join("manifest.json")).ok()?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest).ok()?;
+    Some(manifest.get("version")?.as_str()?.to_string())
+}
+
+/// uBlock Origin selects every list not marked `off` the first time it starts. It also swaps its
+/// list catalog for the online copy, which resets that selection to its own defaults, so the
+/// catalog is pinned to the bundled file. The lists themselves still update online.
+fn enable_extra_lists(assets: &str) -> Result<String, String> {
+    let mut assets: serde_json::Value =
+        serde_json::from_str(assets).map_err(|error| error.to_string())?;
+    for id in EXTRA_LISTS {
+        if let Some(list) = assets.get_mut(id).and_then(|list| list.as_object_mut()) {
+            list.remove("off");
+        }
+    }
+    let catalog = assets
+        .get_mut("assets.json")
+        .and_then(|catalog| catalog.as_object_mut())
+        .ok_or("uBlock Origin's list catalog has an unexpected format.")?;
+    catalog.remove("cdnURLs");
+    catalog.insert(
+        "contentURL".into(),
+        serde_json::json!(["assets/assets.json"]),
+    );
+    serde_json::to_string(&assets).map_err(|error| error.to_string())
+}
+
+fn configure(extension: &Path) -> Result<(), String> {
+    let path = extension.join("assets").join("assets.json");
+    let assets = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    std::fs::write(&path, enable_extra_lists(&assets)?).map_err(|error| error.to_string())
+}
+
+/// The release zip wraps the extension in a `uBlock0.chromium` folder.
+fn extension_root(unpacked: &Path) -> Option<PathBuf> {
+    if unpacked.join("manifest.json").is_file() {
+        return Some(unpacked.to_path_buf());
+    }
+    std::fs::read_dir(unpacked)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| path.join("manifest.json").is_file())
+}
+
+/// Returns false when the latest release is already `installed`.
+fn download_ublock(target: &Path, installed: Option<String>) -> Result<bool, String> {
     let json = updater::run_curl(&[
         "-s",
         "-f",
@@ -178,6 +276,9 @@ fn install_ublock() -> Result<(), String> {
     ])
     .ok_or("Could not reach GitHub to download the ad blocker.")?;
     let release: Release = serde_json::from_str(&json).map_err(|error| error.to_string())?;
+    if installed.is_some_and(|version| version == release.tag_name) {
+        return Ok(false);
+    }
     let asset = release
         .assets
         .into_iter()
@@ -203,10 +304,9 @@ fn install_ublock() -> Result<(), String> {
         if !updater::sha256(&zip)?.eq_ignore_ascii_case(expected) {
             return Err("The ad blocker download did not match its checksum.".to_string());
         }
-        let tar =
-            std::path::Path::new(&std::env::var_os("SystemRoot").unwrap_or("C:\\Windows".into()))
-                .join("System32")
-                .join("tar.exe");
+        let tar = Path::new(&std::env::var_os("SystemRoot").unwrap_or("C:\\Windows".into()))
+            .join("System32")
+            .join("tar.exe");
         let status = updater::hidden_command(tar.to_str().unwrap_or("tar.exe"))
             .arg("-xf")
             .arg(&zip)
@@ -214,24 +314,60 @@ fn install_ublock() -> Result<(), String> {
             .arg(&unpacked)
             .status()
             .map_err(|error| format!("Could not unpack the ad blocker: {error}"))?;
-        if !status.success() || !unpacked.join("manifest.json").is_file() {
-            return Err("The ad blocker package could not be unpacked.".to_string());
+        let root = extension_root(&unpacked)
+            .filter(|_| status.success())
+            .ok_or("The ad blocker package could not be unpacked.")?;
+        configure(&root)?;
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
-        std::fs::create_dir_all(directory()).map_err(|error| error.to_string())?;
-        let _ = std::fs::remove_dir_all(ublock_directory());
-        std::fs::rename(&unpacked, ublock_directory()).map_err(|error| error.to_string())
+        let _ = std::fs::remove_dir_all(target);
+        std::fs::rename(&root, target).map_err(|error| error.to_string())
     })();
     let _ = std::fs::remove_dir_all(&work);
-    result
+    result.map(|()| true)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+
+    #[test]
+    fn extra_lists_are_switched_on_and_others_stay_off() {
+        let mut assets = serde_json::json!({
+            "assets.json": {
+                "content": "internal",
+                "cdnURLs": ["https://cdn.test/assets.json"],
+                "contentURL": ["https://raw.test/assets.json", "assets/assets.json"],
+            },
+            "easylist": { "content": "filters" },
+            "adguard-social": { "content": "filters", "off": true },
+        });
+        for id in EXTRA_LISTS {
+            assets[id] = serde_json::json!({ "content": "filters", "off": true });
+        }
+        let enabled: serde_json::Value =
+            serde_json::from_str(&enable_extra_lists(&assets.to_string()).unwrap()).unwrap();
+        for id in EXTRA_LISTS {
+            assert!(enabled[id].get("off").is_none(), "{id} should be on");
+        }
+        assert_eq!(enabled["adguard-social"]["off"], true);
+        assert!(enabled["assets.json"].get("cdnURLs").is_none());
+        assert_eq!(
+            enabled["assets.json"]["contentURL"],
+            serde_json::json!(["assets/assets.json"])
+        );
+    }
+
+    #[test]
+    fn lists_dropped_upstream_are_skipped() {
+        assert!(enable_extra_lists(r#"{"assets.json": {}, "easylist": {}}"#).is_ok());
+        assert!(enable_extra_lists("not json").is_err());
+    }
 
     #[test]
     fn unpacked_extension_ids_match_chromium_path_hashing() {
+        use std::path::Path;
         assert_eq!(
             unpacked_id(Path::new(
                 r"C:\Users\Admin\AppData\Local\Veluno\extensions\ublock-origin-lite\"

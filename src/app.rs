@@ -852,6 +852,9 @@ fn start_ad_blocker_install(proxy: &EventLoopProxy<UserEvent>) {
 }
 
 pub fn run(args: &[String]) -> wry::Result<()> {
+    if extensions::enabled_at_startup() {
+        extensions::prepare();
+    }
     let _ = extensions::active_at_startup();
     let headless = std::env::var_os("VELUNO_SMOKE_TEST").is_some();
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
@@ -1133,6 +1136,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     if !headless {
         if extensions::enabled_at_startup() {
             start_ad_blocker_install(&proxy);
+            extensions::update_in_background();
+            crate::adblock::update_in_background();
         }
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(3));
@@ -1721,7 +1726,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             {
                                 let _ = desktop::load_extensions(view, &extensions::directory());
                             }
-                            state.update_status = Some("uBlock Origin Lite is installed. Restart Veluno to start blocking ads.".into());
+                            state.update_status = Some("uBlock Origin is installed. Restart Veluno to start blocking ads.".into());
                         },
                         Err(error) => { state.update_status = Some(format!("Ad blocker install failed: {error} Try again from Settings.")); },
                     },

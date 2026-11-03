@@ -578,6 +578,8 @@ pub fn attach(
     let webview = view.webview();
     let mut token = 0;
     let history = proxy.clone();
+    // Pages still load if the runtime is too old to filter requests.
+    let _ = block_ads(&webview);
     unsafe {
         if let Ok(audio) = webview.cast::<ICoreWebView2_8>() {
             let playing_proxy = proxy.clone();
@@ -885,6 +887,106 @@ pub fn attach(
     Ok(())
 }
 
+/// Runs every request through Brave's engine and hides known ad slots on each page.
+#[cfg(windows)]
+fn block_ads(
+    webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
+) -> windows::core::Result<()> {
+    use crate::adblock::{self, Block};
+    use std::{cell::RefCell, rc::Rc};
+    use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
+    use windows::Win32::UI::Shell::SHCreateMemStream;
+    use windows::core::{HSTRING, Interface, PWSTR, w};
+    if !adblock::enabled() {
+        return Ok(());
+    }
+    let environment = unsafe { webview.cast::<ICoreWebView2_2>()?.Environment()? };
+    let page = Rc::new(RefCell::new(String::new()));
+    let scripts = Rc::new(RefCell::new(Vec::<String>::new()));
+    let mut token = 0;
+    unsafe {
+        webview.AddWebResourceRequestedFilter(w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)?;
+        let navigating = page.clone();
+        webview.add_NavigationStarting(
+            &NavigationStartingEventHandler::create(Box::new(move |view, args| {
+                let (Some(view), Some(args)) = (view, args) else {
+                    return Ok(());
+                };
+                let mut uri = PWSTR::null();
+                args.Uri(&mut uri)?;
+                let uri = take_pwstr(uri);
+                for id in scripts.borrow_mut().drain(..) {
+                    view.RemoveScriptToExecuteOnDocumentCreated(&HSTRING::from(id))?;
+                }
+                if let Some(script) = adblock::cosmetic_script(&uri) {
+                    let added = scripts.clone();
+                    view.AddScriptToExecuteOnDocumentCreated(
+                        &HSTRING::from(script),
+                        &AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(
+                            move |result, id| {
+                                if result.is_ok() {
+                                    added.borrow_mut().push(id);
+                                }
+                                Ok(())
+                            },
+                        )),
+                    )?;
+                }
+                *navigating.borrow_mut() = uri;
+                Ok(())
+            })),
+            &mut token,
+        )?;
+        webview.add_WebResourceRequested(
+            &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else { return Ok(()) };
+                let request = args.Request()?;
+                let mut uri = PWSTR::null();
+                request.Uri(&mut uri)?;
+                let uri = take_pwstr(uri);
+                let mut method = PWSTR::null();
+                request.Method(&mut method)?;
+                let method = take_pwstr(method);
+                let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT::default();
+                args.ResourceContext(&mut context)?;
+                let page = page.borrow();
+                let kind = match context {
+                    // Documents load untouched; uBlock Origin already blocks ad frames.
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT => return Ok(()),
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET => "stylesheet",
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE => "image",
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA => "media",
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT => "font",
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT => "script",
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST
+                    | COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH
+                    | COREWEBVIEW2_WEB_RESOURCE_CONTEXT_EVENT_SOURCE => "xmlhttprequest",
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_WEBSOCKET => "websocket",
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING => "ping",
+                    _ => "other",
+                };
+                let response = match adblock::check(&uri, &page, kind, &method) {
+                    None => return Ok(()),
+                    Some(Block::Cancel) => {
+                        environment.CreateWebResourceResponse(None, 403, w!("Blocked"), w!(""))?
+                    }
+                    Some(Block::Replace { mime, body }) => environment.CreateWebResourceResponse(
+                        SHCreateMemStream(Some(&body)).as_ref(),
+                        200,
+                        w!("OK"),
+                        &HSTRING::from(format!(
+                            "Content-Type: {mime}\r\nAccess-Control-Allow-Origin: *"
+                        )),
+                    )?,
+                };
+                args.SetResponse(&response)
+            })),
+            &mut token,
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(not(windows))]
 pub fn attach(_: &WebView, _: usize, _: u64, _: EventLoopProxy<UserEvent>) -> wry::Result<()> {
     Ok(())
@@ -991,6 +1093,7 @@ pub fn attach_popup(view: &WebView, proxy: EventLoopProxy<UserEvent>) -> wry::Re
     use wry::WebViewExtWindows;
     let webview = view.webview();
     let mut token = 0;
+    let _ = block_ads(&webview);
     unsafe {
         let close = proxy.clone();
         webview.add_WindowCloseRequested(
