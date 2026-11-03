@@ -17,14 +17,12 @@ pub struct Recovery {
     navigations: HashMap<(usize, u64), u64>,
     failed: HashSet<Page>,
     pending: HashSet<Page>,
+    retried: HashSet<(usize, u64, String)>,
 }
 
 impl Recovery {
     fn page(&self, tab: &Tab) -> Option<Page> {
-        if tab.pending_url.is_some()
-            || tab.error.is_some()
-            || profile::web_origin(&tab.url).is_none()
-        {
+        if tab.pending_url.is_some() || profile::web_origin(&tab.url).is_none() {
             return None;
         }
         Some(Page {
@@ -45,6 +43,24 @@ impl Recovery {
             .retain(|page| page.id != id || page.generation != generation);
         self.pending
             .retain(|page| page.id != id || page.generation != generation);
+    }
+
+    pub fn navigation_completed(&mut self, id: usize, generation: u64) {
+        self.retried
+            .retain(|(tab_id, tab_gen, _)| *tab_id != id || *tab_gen != generation);
+    }
+
+    pub fn incomplete_load(&mut self, tab: &Tab) -> Option<Page> {
+        let page = self.page(tab)?;
+        if self
+            .retried
+            .insert((page.id, page.generation, page.url.clone()))
+        {
+            self.begin(tab)
+        } else {
+            self.failed.insert(page);
+            None
+        }
     }
 
     pub fn script_failed(&mut self, tab: &Tab, document: &str, resource: &str) -> bool {
@@ -92,6 +108,8 @@ impl Recovery {
             .retain(|page| live.contains(&(page.id, page.generation)));
         self.pending
             .retain(|page| live.contains(&(page.id, page.generation)));
+        self.retried
+            .retain(|(id, generation, _)| live.contains(&(*id, *generation)));
     }
 }
 
@@ -140,5 +158,22 @@ mod tests {
         let request = recovery.begin(&tab).unwrap();
         assert!(recovery.finish(&request, Some(&tab)));
         assert!(!recovery.finish(&request, Some(&tab)));
+    }
+
+    #[test]
+    fn incomplete_loads_retry_once_then_mark_failed_until_completed() {
+        let mut tab = tab();
+        let mut recovery = Recovery::default();
+        recovery.navigation_started(tab.id, tab.generation);
+        let first = recovery.incomplete_load(&tab).unwrap();
+        assert!(recovery.finish(&first, Some(&tab)));
+        recovery.navigation_started(tab.id, tab.generation);
+        assert!(recovery.incomplete_load(&tab).is_none());
+        assert!(recovery.needs_reload(&tab));
+        tab.error = Some("This page did not finish loading.".into());
+        assert!(recovery.needs_reload(&tab));
+        recovery.navigation_completed(tab.id, tab.generation);
+        recovery.navigation_started(tab.id, tab.generation);
+        assert!(recovery.incomplete_load(&tab).is_some());
     }
 }

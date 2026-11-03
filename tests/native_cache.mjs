@@ -101,7 +101,12 @@ try {
   await page.evaluate('window.reloadMarker="menu";true');
   await sidebar.evaluate('document.getElementById("app-reload-fresh").click();true');
   await until(() => page.evaluate('!window.reloadMarker && window.fixtureReady === true'), 'fresh reload menu action');
-  console.log('Cached-script recovery, ordinary Reload, Ctrl+Shift+R, and the app menu passed; site data, permissions, and other origins survive.');
+  const watchUrl = origin + '/truncated-watch';
+  await command('new_tab', { url: watchUrl });
+  const watchPage = await connect(target => target.url === watchUrl, contentPort);
+  await until(() => watchPage.evaluate('window.watchReady === true && !!document.getElementById("movie_player")'), 'truncated HTTP 200 watch skeleton recovers automatically');
+  await until(() => sidebar.evaluate('!currentState.tabs.find(tab => tab.id === currentState.active_tab_id)?.error && !currentState.is_loading'), 'recovered watch tab clears loading and error state');
+  console.log('Cached-script recovery, truncated watch-stream recovery, ordinary Reload, Ctrl+Shift+R, and the app menu passed; site data, permissions, and other origins survive.');
 } finally {
   closeConnections();
 }

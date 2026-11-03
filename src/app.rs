@@ -249,6 +249,7 @@ pub enum UserEvent {
     PageLoad(usize, u64, bool, String),
     History(usize, u64, bool, bool),
     Source(usize, u64, String),
+    IncompleteLoad(usize, u64, String),
     Failed(usize, u64, String, String),
     Crashed(usize, u64),
     Favicon(usize, u64, String),
@@ -649,12 +650,13 @@ fn content(
     if extensions::enabled_at_startup() {
         use wry::WebViewBuilderExtWindows;
         let _ = std::fs::create_dir_all(extensions::directory());
-        builder = builder
-            .with_browser_extensions_enabled(true)
-            .with_extensions_path(extensions::directory());
+        builder = builder.with_browser_extensions_enabled(true);
     }
     let view = builder.build_as_child(window)?;
     desktop::attach(&view, id, generation, proxy.clone())?;
+    if !private && extensions::enabled_at_startup() {
+        let _ = desktop::load_extensions(&view, &extensions::directory());
+    }
     // Older WebView2 runtimes lack some of these settings; pages still work without them.
     let _ = desktop::apply_privacy(&view, &settings::get());
     if let Some(tab) = state.tabs.iter().find(|tab| tab.id == id) {
@@ -731,8 +733,20 @@ fn tab_event(
                 }
                 tab.is_loading = true;
             } else {
+                if tab.pending_url.as_ref().is_some_and(|expected| {
+                    expected != &url && !(profile::is_internal(expected) && url == "about:blank")
+                }) {
+                    return;
+                }
                 let failed = tab.error.is_some();
                 tab.is_loading = false;
+                tab.pending_url = None;
+                if !failed
+                    && !profile::is_internal(&tab.url)
+                    && let Some(normalized) = profile::normalize_url(&url)
+                {
+                    tab.url = normalized;
+                }
                 if !failed && (tab.url == url || profile::is_internal(&tab.url)) {
                     tab.document_url = Some(tab.url.clone());
                 }
@@ -1209,7 +1223,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                 }
                 let persistent = matches!(&event,
                     UserEvent::External(_) | UserEvent::Title(..) | UserEvent::PageLoad(..)
-                    | UserEvent::Source(..) | UserEvent::Favicon(..) | UserEvent::DownloadStarted(..)
+                    | UserEvent::Source(..) | UserEvent::IncompleteLoad(..) | UserEvent::Failed(..)
+                    | UserEvent::Favicon(..) | UserEvent::DownloadStarted(..)
                     | UserEvent::Command(Command::Navigate { .. } | Command::NewTab { url: Some(_) }
                         | Command::SubmitNewTab { .. } | Command::SwitchTab { .. } | Command::CloseTab { .. }
                         | Command::ToggleSleep { .. } | Command::SleepInactiveTabs | Command::ClearUnpinnedTabs
@@ -1245,23 +1260,66 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         }
                     },
                     UserEvent::SiteFilesCleared(page, result) => {
-                        if !recovery.finish(&page, state.active_tab()) { return; }
+                        let active = page.id == state.active_tab_id;
+                        if !recovery.finish(&page, state.tabs.iter().find(|tab| tab.id == page.id)) { return; }
                         match result {
                             Ok(()) => {
                                 if let Some(view) = views.get(&page.id) {
                                     if let Err(error) = desktop::reload_fresh(view, page, proxy.clone()) {
-                                        state.update_status = Some(format!("Could not reload fresh site files: {error}"));
-                                    } else {
+                                        if active { state.update_status = Some(format!("Could not reload fresh site files: {error}")); }
+                                    } else if active {
                                         state.update_status = Some("Site files refreshed. Your sign-in and saved site data were kept.".into());
                                     }
                                 }
                             },
-                            Err(error) => state.update_status = Some(format!("Could not refresh site files: {error}")),
+                            Err(error) => if active { state.update_status = Some(format!("Could not refresh site files: {error}")); },
                         }
                     },
                     UserEvent::FreshReloadFailed(page, error) => {
-                        if recovery.is_current(&page, state.active_tab()) {
+                        if page.id == state.active_tab_id
+                            && recovery.is_current(&page, state.tabs.iter().find(|tab| tab.id == page.id))
+                        {
                             state.update_status = Some(format!("Could not reload fresh site files: {error}"));
+                        }
+                    },
+                    UserEvent::IncompleteLoad(id, generation, url) => {
+                        let active = id == state.active_tab_id;
+                        let retry = if let Some(tab) = state.tabs.iter_mut().find(|tab| {
+                            tab.id == id
+                                && tab.generation == generation
+                                && tab.pending_url.as_ref().is_none_or(|pending| pending == &url)
+                                && !profile::is_internal(&tab.url)
+                        }) {
+                            if let Some(normalized) = profile::normalize_url(&url) {
+                                tab.url = normalized;
+                            }
+                            tab.pending_url = None;
+                            tab.is_loading = false;
+                            match recovery.incomplete_load(tab) {
+                                Some(page) => Some(page),
+                                None => {
+                                    tab.error = Some("This page did not finish loading. Check your connection, then reload to try again.".into());
+                                    if active {
+                                        state.update_status = Some("This page did not finish loading. Reload to refresh this site's cached files.".into());
+                                    }
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                        if let Some(page) = retry
+                            && let Some(view) = views.get(&id)
+                        {
+                            if active {
+                                state.update_status = Some("Refreshing this site's cached files. Your sign-in and saved site data are kept.".into());
+                            }
+                            if let Err(error) = desktop::clear_site_files(view, page.clone(), proxy.clone()) {
+                                recovery.finish(&page, state.tabs.iter().find(|tab| tab.id == id));
+                                if active {
+                                    state.update_status = Some(format!("Could not refresh site files: {error}"));
+                                }
+                            }
                         }
                     },
                     UserEvent::Maintenance => {
@@ -1374,21 +1432,32 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                     return;
                                 }
                                 let url = tab.url.clone(); let id = tab.id;
+                                recovery.navigation_completed(id, tab.generation);
                                 let crashed = tab.error.is_some() && views.get(&id).and_then(|view| view.url().ok()).is_some_and(|url| url == "about:blank" || url.starts_with("data:"));
                                 if crashed { views.remove(&id); }
                                 if let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == id) { tab.error = None; tab.pending_url = Some(url.clone()); tab.is_loading = true; }
                                 if let Some(view) = views.get(&id) { let _ = if profile::is_internal(&url) { load(view, &state, &url) } else { view.reload() }; }
                             },
                             Command::ReloadFresh => if let Some(tab) = state.active_tab() {
-                                if profile::web_origin(&tab.url).is_none() || tab.error.is_some() {
+                                let crashed = tab.error.is_some()
+                                    && views.get(&tab.id).is_none_or(|view| {
+                                        view.url()
+                                            .ok()
+                                            .is_some_and(|url| url == "about:blank" || url.starts_with("data:"))
+                                    });
+                                if profile::web_origin(&tab.url).is_none() || crashed {
                                     let _ = proxy.send_event(UserEvent::Command(Command::Reload));
-                                } else if let Some(view) = views.get(&tab.id)
-                                    && let Some(page) = recovery.begin(tab) {
+                                } else if let Some(view) = views.get(&tab.id) {
+                                    if let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == state.active_tab_id) {
+                                        tab.error = None;
+                                    }
+                                    if let Some(page) = state.active_tab().and_then(|tab| recovery.begin(tab)) {
                                         state.update_status = Some("Refreshing this site's cached files. Your sign-in and saved site data are kept.".into());
                                         if let Err(error) = desktop::clear_site_files(view, page.clone(), proxy.clone()) {
                                             recovery.finish(&page, state.active_tab());
                                             state.update_status = Some(format!("Could not refresh site files: {error}"));
                                         }
+                                    }
                                 }
                             },
                             Command::ResourceLoadFailed { .. } => {},
@@ -1609,8 +1678,12 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                     event @ (UserEvent::Title(..) | UserEvent::PageLoad(..) | UserEvent::Source(..)
                         | UserEvent::History(..) | UserEvent::Failed(..) | UserEvent::Favicon(..)
                         | UserEvent::Crashed(..)) => {
-                            if let UserEvent::PageLoad(id, generation, true, _) = &event {
-                                recovery.navigation_started(*id, *generation);
+                            if let UserEvent::PageLoad(id, generation, loading, _) = &event {
+                                if *loading {
+                                    recovery.navigation_started(*id, *generation);
+                                } else {
+                                    recovery.navigation_completed(*id, *generation);
+                                }
                             }
                             tab_event(&mut state, &mut views, &mut permission_prompt, event);
                         },
@@ -1642,7 +1715,14 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                     } },
                     UserEvent::Status(status) => { state.update_status = Some(status); },
                     UserEvent::AdBlockerInstalled(result) => match result {
-                        Ok(()) => { state.update_status = Some("uBlock Origin Lite is installed. Restart Veluno to start blocking ads.".into()); },
+                        Ok(()) => {
+                            if extensions::enabled_at_startup()
+                                && let Some((_, view)) = views.iter().find(|(id, _)| !state.is_private(**id))
+                            {
+                                let _ = desktop::load_extensions(view, &extensions::directory());
+                            }
+                            state.update_status = Some("uBlock Origin Lite is installed. Restart Veluno to start blocking ads.".into());
+                        },
                         Err(error) => { state.update_status = Some(format!("Ad blocker install failed: {error} Try again from Settings.")); },
                     },
                     UserEvent::UpdateFailed(status) => { state.update_busy = false; state.update_status = Some(status); },
