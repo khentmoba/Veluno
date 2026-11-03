@@ -269,7 +269,7 @@ try {
   await until(() => settings.evaluate(`document.getElementById('title').textContent === 'Privacy and security'`), 'Ctrl+Shift+Delete opens Settings at Privacy');
   await command('new_tab', { url: origin + '/reader-article' });
   const article = await connect(page => page.url === origin + '/reader-article', contentPort);
-  await until(() => article.evaluate('document.readyState === "complete"'), 'reader fixture loaded');
+  await until(() => article.evaluate(`location.href === ${JSON.stringify(origin + '/reader-article')} && document.readyState === 'complete'`), 'reader fixture loaded');
   await article.evaluate(`(() => {
     const paragraph = 'Reader view keeps the article, drops the clutter, and lets long text breathe on a calm page, which matters for anyone reading at length. ';
     document.body.innerHTML = '<nav><a href="/">Home</a><a href="/about">About</a></nav><article><h1>Reader fixture</h1>'
