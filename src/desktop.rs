@@ -21,6 +21,7 @@ pub struct DownloadInfo {
 thread_local! {
     static CANCELLABLE_DOWNLOADS: std::cell::RefCell<Vec<(usize, webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2DownloadOperation)>> = const { std::cell::RefCell::new(Vec::new()) };
     static DOWNLOAD_ITEMS: std::cell::RefCell<Vec<std::rc::Rc<std::cell::RefCell<DownloadInfo>>>> = const { std::cell::RefCell::new(Vec::new()) };
+    static SYNCED_EXTENSIONS: std::cell::RefCell<std::collections::HashSet<std::path::PathBuf>> = std::cell::RefCell::new(std::collections::HashSet::new());
 }
 
 pub fn download_items() -> Vec<DownloadInfo> {
@@ -685,8 +686,8 @@ pub fn attach(
             })),
             &mut token,
         )?;
-        let navigations =
-            std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
+        let navigations: std::rc::Rc<std::cell::RefCell<Option<(u64, String)>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(None));
         let starting = navigations.clone();
         let started = proxy.clone();
         webview.add_NavigationStarting(
@@ -697,7 +698,7 @@ pub fn attach(
                     args.NavigationId(&mut navigation_id)?;
                     args.Uri(&mut uri)?;
                     let uri = take_pwstr(uri);
-                    starting.borrow_mut().insert(navigation_id, uri.clone());
+                    *starting.borrow_mut() = Some((navigation_id, uri.clone()));
                     let _ = started.send_event(UserEvent::PageLoad(id, generation, true, uri));
                 }
                 Ok(())
@@ -705,20 +706,44 @@ pub fn attach(
             &mut token,
         )?;
         let failed = proxy.clone();
-        webview.add_NavigationCompleted(&NavigationCompletedEventHandler::create(Box::new(move |_, args| {
+        webview.add_NavigationCompleted(&NavigationCompletedEventHandler::create(Box::new(move |view, args| {
             if let Some(args) = args {
                 let mut navigation_id = 0;
                 args.NavigationId(&mut navigation_id)?;
-                let uri = navigations.borrow_mut().remove(&navigation_id).unwrap_or_default();
+                let Some((_, mut uri)) = navigations
+                    .borrow_mut()
+                    .take_if(|(current_id, _)| *current_id == navigation_id)
+                else {
+                    return Ok(());
+                };
                 let mut success = BOOL::default();
                 args.IsSuccess(&mut success)?;
+                let source_uri = view.and_then(|view| {
+                    let mut current = PWSTR::null();
+                    view.Source(&mut current).ok()?;
+                    crate::profile::normalize_url(&take_pwstr(current))
+                });
                 if success.as_bool() {
+                    if let Some(current) = source_uri {
+                        uri = current;
+                    }
                     let _ = failed.send_event(UserEvent::PageLoad(id, generation, false, uri));
                 } else {
                     let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
                     args.WebErrorStatus(&mut status)?;
                     if status != COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED {
-                        let _ = failed.send_event(UserEvent::Failed(id, generation, uri, "This page could not be reached. Check your connection or the address, then try again.".into()));
+                        let mut http_status = 0;
+                        if let Ok(args2) = args.cast::<ICoreWebView2NavigationCompletedEventArgs2>() {
+                            let _ = args2.HttpStatusCode(&mut http_status);
+                        }
+                        if (200..300).contains(&http_status) {
+                            if let Some(current) = source_uri {
+                                uri = current;
+                            }
+                            let _ = failed.send_event(UserEvent::IncompleteLoad(id, generation, uri));
+                        } else {
+                            let _ = failed.send_event(UserEvent::Failed(id, generation, uri, "This page could not be reached. Check your connection or the address, then try again.".into()));
+                        }
                     }
                 }
             }
@@ -862,6 +887,100 @@ pub fn attach(
 
 #[cfg(not(windows))]
 pub fn attach(_: &WebView, _: usize, _: u64, _: EventLoopProxy<UserEvent>) -> wry::Result<()> {
+    Ok(())
+}
+
+/// Ensures unpacked extensions in `directory` are installed once without reloading existing ones.
+#[cfg(windows)]
+pub fn load_extensions(view: &WebView, directory: &std::path::Path) -> Result<(), String> {
+    use webview2_com::{
+        BrowserExtensionEnableCompletedHandler, BrowserExtensionRemoveCompletedHandler,
+        Microsoft::Web::WebView2::Win32::*, ProfileAddBrowserExtensionCompletedHandler,
+        ProfileGetBrowserExtensionsCompletedHandler,
+    };
+    use windows::core::{BOOL, HSTRING, Interface, PWSTR};
+    use wry::WebViewExtWindows;
+
+    let mut unpacked = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(directory) {
+        for entry in entries.flatten() {
+            let path = std::path::absolute(entry.path()).unwrap_or_else(|_| entry.path());
+            if path.join("manifest.json").is_file()
+                && SYNCED_EXTENSIONS.with_borrow_mut(|synced| synced.insert(path.clone()))
+            {
+                unpacked.push((crate::extensions::unpacked_id(&path), path));
+            }
+        }
+    }
+    if unpacked.is_empty() {
+        return Ok(());
+    }
+    unsafe {
+        let profile = view
+            .webview()
+            .cast::<ICoreWebView2_13>()
+            .and_then(|view| view.Profile())
+            .and_then(|profile| profile.cast::<ICoreWebView2Profile7>())
+            .map_err(|error| error.to_string())?;
+        let profile_for_add = profile.clone();
+        profile
+            .GetBrowserExtensions(&ProfileGetBrowserExtensionsCompletedHandler::create(
+                Box::new(move |result, list| {
+                    result?;
+                    let mut present = std::collections::HashSet::new();
+                    if let Some(list) = list {
+                        let mut count = 0;
+                        list.Count(&mut count)?;
+                        for index in 0..count {
+                            if let Ok(extension) = list.GetValueAtIndex(index) {
+                                let mut raw_id = PWSTR::null();
+                                extension.Id(&mut raw_id)?;
+                                let id = webview2_com::take_pwstr(raw_id);
+                                let mut raw_name = PWSTR::null();
+                                extension.Name(&mut raw_name)?;
+                                let name = webview2_com::take_pwstr(raw_name);
+                                if unpacked.iter().any(|(expected, _)| expected == &id) {
+                                    let mut enabled = BOOL::default();
+                                    extension.IsEnabled(&mut enabled)?;
+                                    if !enabled.as_bool() {
+                                        let _ = extension.Enable(
+                                            true,
+                                            &BrowserExtensionEnableCompletedHandler::create(
+                                                Box::new(|_| Ok(())),
+                                            ),
+                                        );
+                                    }
+                                    present.insert(id);
+                                } else if name == "uBlock Origin Lite" {
+                                    let _ = extension.Remove(
+                                        &BrowserExtensionRemoveCompletedHandler::create(Box::new(
+                                            |_| Ok(()),
+                                        )),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    for (id, path) in &unpacked {
+                        if !present.contains(id) {
+                            let path_hs = HSTRING::from(path.as_path());
+                            let _ = profile_for_add.AddBrowserExtension(
+                                &path_hs,
+                                &ProfileAddBrowserExtensionCompletedHandler::create(Box::new(
+                                    |_, _| Ok(()),
+                                )),
+                            );
+                        }
+                    }
+                    Ok(())
+                }),
+            ))
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[cfg(not(windows))]
+pub fn load_extensions(_: &WebView, _: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 

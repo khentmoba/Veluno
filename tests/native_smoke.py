@@ -16,9 +16,30 @@ import uuid
 
 class Fixture(BaseHTTPRequestHandler):
     release_download = threading.Event()
+    truncated_watch_attempts = 0
 
     def do_GET(self):
         path = self.path.split('?', 1)[0]
+        if path == '/truncated-watch':
+            Fixture.truncated_watch_attempts += 1
+            if Fixture.truncated_watch_attempts == 1:
+                body = b'<!doctype html><title>Watch fixture</title><body data-state="skeleton"><div id="watch-page-skeleton">Skeleton only</div>'
+                self.wfile.write(
+                    b'HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n'
+                    b'Cache-Control: no-store\r\nContent-Length: 500000\r\nConnection: close\r\n\r\n'
+                    + body
+                )
+                self.wfile.flush()
+                time.sleep(0.1)
+                return
+            body = b'<!doctype html><title>Watch fixture</title><body data-state="ready"><div id="movie_player">Ready player</div><script>window.watchReady = true;</script></body>'
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path.startswith('/cache-recovery/'):
             if path == '/cache-recovery/worker.js':
                 body = b'''self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
