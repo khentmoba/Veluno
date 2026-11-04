@@ -11,6 +11,7 @@ pub const CONTENT_RADIUS: f64 = 10.0;
 pub const TOPBAR_HOT_ZONE: f64 = 4.0;
 pub const TOPBAR_EXPANDED: f64 = 34.0;
 pub const POPUP_BAR_HEIGHT: f64 = 42.0;
+pub const SIDE_PANEL_WIDTH: f64 = 380.0;
 
 /// The shared page script, using the search engine chosen in Settings.
 pub fn script() -> String {

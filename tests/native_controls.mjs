@@ -108,6 +108,30 @@ export async function checkBrowserControls(sidebar, command, origin, port, artif
   await sidebar.evaluate(`document.querySelector('#workspace-emojis button[aria-label="No workspace icon"]').click();document.getElementById('profiles').open=false;true`);
   await until(() => sidebar.evaluate(`!currentState.workspaces.find(w=>w.id===${space}).emoji&&document.getElementById('workspace-emoji').hidden`), 'workspace emoji clears');
   console.log('Workspace emoji icons can be chosen from the workspace menu and cleared.');
+  await checkSidePanel(sidebar, command, a, b, origin, port);
+}
+
+async function checkSidePanel(sidebar, command, a, b, origin, port) {
+  await command('switch_tab', { id: b });
+  await until(() => sidebar.evaluate(`currentState.active_tab_id===${b}`), 'side panel test tab');
+  const page = await connect(target => target.url === origin + '/controls-b', port);
+  const before = new Set((await targets(port)).map(target => target.id));
+  const fullWidth = await page.evaluate('innerWidth');
+  await command('open_in_side_panel', { id: a });
+  const panel = await connect(target => target.url === origin + '/controls-a' && !before.has(target.id), port);
+  await until(() => panel.evaluate('document.readyState==="complete"&&document.visibilityState==="visible"'), 'side panel loads beside the page');
+  await until(async () => await page.evaluate('innerWidth') < fullWidth - 100, 'the page narrows for the side panel');
+  assert.equal(await sidebar.evaluate(`document.getElementById('app-side-panel-label').textContent`), 'Hide side panel');
+  assert.equal(await sidebar.evaluate('currentState.active_tab_id'), b, 'docking a site keeps the current tab');
+  await panel.evaluate('window.panelMarker=1;true');
+  await command('toggle_side_panel');
+  await until(async () => !(await panel.evaluate('document.visibilityState==="visible"')) && await page.evaluate('innerWidth') === fullWidth, 'hiding the side panel restores the page width');
+  await command('toggle_side_panel');
+  await until(() => panel.evaluate('document.visibilityState==="visible"'), 'side panel shows again');
+  assert.equal(await panel.evaluate('window.panelMarker'), 1, 'the side panel keeps its page while hidden');
+  await command('toggle_side_panel');
+  await until(async () => await page.evaluate('innerWidth') === fullWidth, 'side panel hidden for later checks');
+  console.log('The side web panel docks a site beside the current tab, narrows the page, and hides without reloading.');
 }
 
 async function checkSplitView(sidebar, command, left, a, b, origin, port, artifacts) {

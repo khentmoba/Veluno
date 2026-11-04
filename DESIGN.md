@@ -65,6 +65,10 @@ Alt+Click on an http(s) link previews it in the popup window instead of navigati
 
 A split pairs two tabs from one workspace. While either is active, the content area is divided into two equal panes with a window-margin gap; each pane keeps its own WebView, rounded region, and history. Focusing a pane's WebView makes it the active tab, so the address bar and shortcuts follow the pane in use. Sleep never unloads the visible partner. The pair ends when either tab closes, sleeps, or moves to another workspace, and it is not persisted.
 
+## Side web panel
+
+One docked site, taken from a regular (non-private) http(s) tab. It is a separate WebView on the tab profile, placed at the content edge away from the sidebar, 380px wide or at most 45% of the content area; tabs and split panes use the remaining width. Hiding keeps the WebView and its page state; changing the docked site replaces it. The URL and open state persist in the session.
+
 ## Motion
 
 The focal interaction is the floating search palette: each invocation resolves into focus over a dimmed page in 280ms, and exits in 100ms before the native overlay hides. The scrim animates opacity on its own noninteractive layer; the panel uses transform and opacity without animated blur. Dismissal starts at the current scrim opacity, including during an interrupted entrance. A new invocation continues from the visible panel and scrim state, and cancels a pending exit so stale dismiss/submit IPC cannot fire. Reduced-motion mode skips these spatial effects and never delays submission or cancellation.

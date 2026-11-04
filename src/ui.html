@@ -107,6 +107,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 <button id="app-reload-fresh" data-action="reload_fresh" title="Refresh this site's cached files and reload. Keeps your sign-in and saved site data."><span class="item"><svg><use href="#reload"/></svg>Reload fresh site files</span><kbd>Ctrl Shift R</kbd></button>
 <hr>
 <button data-action="open_history"><span class="item"><svg><use href="#clock"/></svg>History and bookmarks</span><kbd>Ctrl H</kbd></button>
+<button id="app-side-panel" data-action="toggle_side_panel" title="Right-click a tab and choose Open in side panel to dock a site here"><span class="item"><svg><use href="#book"/></svg><span id="app-side-panel-label">Show side panel</span></span></button>
 <button data-action="open_downloads"><span class="item"><svg><use href="#download"/></svg>Downloads</span><kbd>Ctrl J</kbd></button>
 <button data-action="toggle_reader"><span class="item"><svg><use href="#book"/></svg>Reader view</span><kbd>F9</kbd></button>
 <button data-action="screenshot" title="Save the visible page as a PNG in Pictures\Veluno"><span class="item"><svg><use href="#camera"/></svg>Save screenshot</span></button>
@@ -328,6 +329,7 @@ window.updateState = state => {
  const [securityIcon,securityLabel]=scheme==='https:'?['lock','Connection is secure']:scheme==='http:'?['warn','Not secure: this site does not use HTTPS']:['search','Search'];
  $('security').querySelector('use').setAttribute('href','#'+securityIcon); $('security').setAttribute('aria-label','Site controls: '+securityLabel); $('security').title='Site controls: '+securityLabel; $('security').classList.toggle('insecure',securityIcon==='warn');
  $('security').disabled=!['https:','http:'].includes(scheme);
+ $('app-side-panel').disabled=!state.side_panel_url; $('app-side-panel-label').textContent=state.side_panel_open?'Hide side panel':'Show side panel';
  $('app-reload-fresh').disabled=!['https:','http:'].includes(scheme)||!!active?.is_loading;
  if(siteTarget&&(siteTarget.id!==active?.id||siteTarget.origin!==webOrigin(active?.pending_url||active?.url))) closeSitePanel(false);
  const bookmarked=!!active&&(state.bookmarks||[]).some(b=>b.url===active.url);
@@ -519,6 +521,8 @@ function openTabContextMenu(tab,clientY) {
  addItem('Move tab up',()=>moveTab(tab,false));
  addItem('Move tab down',()=>moveTab(tab,true));
  addItem('Duplicate tab',()=>Veluno.send('duplicate_tab',{id:tab.id}));
+ const privateTab=(currentState.workspaces||[]).some(w=>w.private&&w.id===tab.workspace_id);
+ if(!privateTab&&/^https?:/.test(tab.url)) addItem('Open in side panel',()=>Veluno.send('open_in_side_panel',{id:tab.id}));
  if((currentState.split||[]).includes(tab.id)) addItem('Close split view',()=>Veluno.send('unsplit'));
  else if(tab.id!==currentState.active_tab_id&&tab.workspace_id===currentState.active_workspace_id) addItem('Split with current tab',()=>Veluno.send('split_tab',{id:tab.id}));
  addItem(tab.is_sleeping?'Wake tab':'Sleep tab',()=>Veluno.send(tab.is_sleeping?'switch_tab':'toggle_sleep',{id:tab.id}),tab.id===currentState.active_tab_id);

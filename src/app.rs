@@ -122,6 +122,10 @@ pub enum Command {
     SplitTab {
         id: usize,
     },
+    OpenInSidePanel {
+        id: usize,
+    },
+    ToggleSidePanel,
     Unsplit,
     Glance {
         url: String,
@@ -343,6 +347,74 @@ fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, 
             size: Size::Logical(LogicalSize::new(top_width.max(10.), top_height)),
         },
     )
+}
+
+/// Takes the side web panel from the content edge away from the sidebar.
+fn side_panel_bounds(content: Rect, scale: f64, sidebar_right: bool) -> (Rect, Rect) {
+    let position = content.position.to_logical::<f64>(scale);
+    let size = content.size.to_logical::<f64>(scale);
+    let width = ui::SIDE_PANEL_WIDTH.min(size.width * 0.45);
+    let rest = (size.width - width - ui::WINDOW_MARGIN).max(10.);
+    let (panel_x, content_x) = if sidebar_right {
+        (position.x, position.x + width + ui::WINDOW_MARGIN)
+    } else {
+        (position.x + rest + ui::WINDOW_MARGIN, position.x)
+    };
+    let rect = |x: f64, width: f64| Rect {
+        position: Position::Logical(LogicalPosition::new(x, position.y)),
+        size: Size::Logical(LogicalSize::new(width, size.height)),
+    };
+    (rect(content_x, rest), rect(panel_x, width))
+}
+
+/// The docked side web panel. It shares the tab profile, so sign-ins carry over.
+fn side_panel(
+    window: &Window,
+    context: &mut WebContext,
+    url: &str,
+    bounds: Rect,
+    proxy: &EventLoopProxy<UserEvent>,
+) -> wry::Result<WebView> {
+    let nav_proxy = proxy.clone();
+    let tab_proxy = proxy.clone();
+    let mut builder = WebViewBuilder::new_with_web_context(context)
+        .with_bounds(bounds)
+        .with_focused(false)
+        .with_clipboard(true)
+        .with_navigation_handler(move |target| {
+            let allowed = profile::allowed_url(&target)
+                || target == "about:blank"
+                || target.starts_with("data:text/html;");
+            if !allowed {
+                let _ = nav_proxy.send_event(UserEvent::Status(
+                    "This link uses an unsupported application protocol.".into(),
+                ));
+            }
+            allowed
+        })
+        .with_new_window_req_handler(move |target, _| {
+            if profile::allowed_url(&target) {
+                let _ =
+                    tab_proxy.send_event(UserEvent::Command(Command::NewTab { url: Some(target) }));
+            }
+            NewWindowResponse::Deny
+        });
+    // Match the tab profile's environment options, as Glance does.
+    #[cfg(windows)]
+    {
+        use wry::WebViewBuilderExtWindows;
+        if std::env::var_os("VELUNO_SMOKE_TEST").is_some()
+            && let Ok(arguments) = std::env::var("VELUNO_SMOKE_CONTENT_BROWSER_ARGUMENTS")
+        {
+            builder = builder.with_additional_browser_args(arguments);
+        }
+        if extensions::enabled_at_startup() {
+            builder = builder.with_browser_extensions_enabled(true);
+        }
+    }
+    let view = builder.with_url(url).build_as_child(window)?;
+    let _ = desktop::apply_privacy(&view, &settings::get());
+    Ok(view)
 }
 
 /// Splits the content area into two side-by-side panes with a window-margin gap.
@@ -1253,6 +1325,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut palette_needs_open = false;
     let mut visible_id = None;
     let mut placed: HashMap<usize, Rect> = HashMap::new();
+    let mut panel: Option<(WebView, String)> = None;
+    let mut panel_placed: Option<Rect> = None;
+    let mut panel_shown = false;
     let mut shown: Vec<usize> = Vec::new();
     let mut last_sidebar_state = String::new();
     let mut sleep_pending = HashSet::new();
@@ -1388,7 +1463,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         | Command::ReorderTab { .. } | Command::RenameWorkspace { .. } | Command::SetWorkspaceEmoji { .. } | Command::DeleteWorkspace { .. } | Command::ToggleMute { .. }
                         | Command::DismissUpdate { .. }
                         | Command::ToggleBookmark { .. } | Command::NewPrivateTab
-                        | Command::SplitTab { .. } | Command::Unsplit));
+                        | Command::SplitTab { .. } | Command::Unsplit
+                        | Command::OpenInSidePanel { .. } | Command::ToggleSidePanel));
                 match event {
                     UserEvent::Audio(id, generation, playing, muted) => {
                         if let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == id && tab.generation == generation) {
@@ -1692,6 +1768,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             },
                             Command::SplitTab { id } => { if state.split_with(id) { palette_open = false; } },
                             Command::Unsplit => { state.split = None; },
+                            Command::OpenInSidePanel { id } => { state.open_in_side_panel(id); },
+                            Command::ToggleSidePanel => { state.side_panel_open = !state.side_panel_open && state.side_panel_url.is_some(); },
                             Command::ClosePopup => {
                                 *popup_host.view.borrow_mut() = None;
                                 popup_host.window.set_visible(false);
@@ -2018,6 +2096,35 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             let _ = topbar.set_bounds(topbar_bounds);
             return;
         }
+        let content_bounds = match state.side_panel_url.clone().filter(|_| state.side_panel_open) {
+            Some(url) => {
+                let (rest, panel_rect) = side_panel_bounds(content_bounds, window.scale_factor(), settings::sidebar_right());
+                if panel.as_ref().is_none_or(|(_, loaded)| loaded != &url) {
+                    panel = None;
+                    panel_placed = None;
+                    match side_panel(&window, &mut context, &url, panel_rect, &proxy) {
+                        Ok(view) => panel = Some((view, url)),
+                        Err(error) => { state.side_panel_open = false; state.update_status = Some(format!("Could not open the side panel: {error}")); },
+                    }
+                }
+                if let Some((view, _)) = &panel {
+                    if panel_placed != Some(panel_rect) {
+                        let _ = view.set_bounds(panel_rect);
+                        let physical = panel_rect.size.to_physical::<i32>(window.scale_factor());
+                        let radius = if window.is_maximized() || window.fullscreen().is_some() { 0 } else { (ui::CONTENT_RADIUS * window.scale_factor()) as i32 };
+                        desktop::round(view, physical.width, physical.height, radius);
+                        panel_placed = Some(panel_rect);
+                    }
+                    if !panel_shown { desktop::show(view, true); panel_shown = true; }
+                }
+                if state.side_panel_open { rest } else { content_bounds }
+            }
+            None => {
+                if panel_shown && let Some((view, _)) = &panel { desktop::show(view, false); }
+                panel_shown = false;
+                content_bounds
+            }
+        };
         let panes = split_bounds(content_bounds, window.scale_factor());
         let pane = |id: usize| match pair { Some([left, _]) if id == left => panes.0, Some([_, right]) if id == right => panes.1, _ => content_bounds };
         placed.retain(|id, _| views.contains_key(id));

@@ -116,6 +116,11 @@ pub struct BrowserState {
     /// Two tabs shown side by side whenever either is active. Not restored after a restart.
     #[serde(default, skip_deserializing)]
     pub split: Option<[usize; 2]>,
+    /// The site docked in the side web panel, kept across restarts.
+    #[serde(default)]
+    pub side_panel_url: Option<String>,
+    #[serde(default)]
+    pub side_panel_open: bool,
 }
 
 impl BrowserState {
@@ -179,6 +184,8 @@ impl BrowserState {
             update_busy: false,
             zoom: 100,
             split: None,
+            side_panel_url: None,
+            side_panel_open: false,
         }
     }
 
@@ -855,6 +862,21 @@ impl BrowserState {
         pair.contains(&self.active_tab_id).then_some(pair)
     }
 
+    /// Docks a regular web tab's address in the side panel and shows the panel.
+    pub fn open_in_side_panel(&mut self, tab_id: usize) -> bool {
+        let Some(tab) = self.tabs.iter().find(|t| t.id == tab_id) else {
+            return false;
+        };
+        if self.is_private(tab_id)
+            || !(tab.url.starts_with("https://") || tab.url.starts_with("http://"))
+        {
+            return false;
+        }
+        self.side_panel_url = Some(tab.url.clone());
+        self.side_panel_open = true;
+        true
+    }
+
     /// The other half of the split while the active tab is in it.
     pub fn split_partner(&self) -> Option<usize> {
         let [a, b] = self.split?;
@@ -1075,6 +1097,33 @@ impl BrowserState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn side_panel_docks_only_regular_web_pages() {
+        let mut state = BrowserState::new();
+        let home = state.active_tab_id;
+        assert!(!state.open_in_side_panel(home));
+        let page = state.add_tab(Some("https://example.com/notes".into()), false);
+        assert!(state.open_in_side_panel(page));
+        assert_eq!(
+            state.side_panel_url.as_deref(),
+            Some("https://example.com/notes")
+        );
+        assert!(state.side_panel_open);
+        let private = state.open_private_tab();
+        state.update_active_tab("https://example.com/secret".into(), None);
+        assert!(!state.open_in_side_panel(private));
+        assert_eq!(
+            state.side_panel_url.as_deref(),
+            Some("https://example.com/notes")
+        );
+        let saved = serde_json::to_string(&state).unwrap();
+        let restored = BrowserState::from_session(&saved).unwrap();
+        assert_eq!(
+            restored.side_panel_url.as_deref(),
+            Some("https://example.com/notes")
+        );
+    }
 
     #[test]
     fn workspace_emoji_is_validated_and_clearable() {
