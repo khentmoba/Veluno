@@ -70,11 +70,19 @@ try {
     await until(()=>sidebar.evaluate('currentState.download_items?.some(item=>item.status==="complete"&&item.received===65536)'), 'completed file retained with byte count');
     assert.match(await sidebar.evaluate('document.getElementById("download-items").textContent'), /Complete.*0\.1 MB.*Show in folder/);
     assert.equal(await sidebar.evaluate('document.querySelector("#download-items progress")'), null, 'no progress bar after completion');
+    assert.equal(await sidebar.evaluate('document.querySelectorAll(".download-actions button").length'), 2, 'both Open and Show in folder buttons present');
+    await command('toggle_downloads');
+    await until(()=>sidebar.evaluate('document.getElementById("downloads-panel").hidden'), 'panel toggles closed');
+    await command('toggle_downloads');
+    await until(()=>sidebar.evaluate('!document.getElementById("downloads-panel").hidden'), 'panel toggles open');
     await command('close_downloads');
     await until(()=>sidebar.evaluate('document.getElementById("downloads-panel").hidden'),'panel closed');
     await command('open_downloads');
     await until(()=>sidebar.evaluate('!document.getElementById("downloads-panel").hidden'),'completed downloads reopened');
     assert.equal(await sidebar.evaluate('currentState.update_status?.startsWith("Download complete")'), true, 'completed download remains accessible');
+    await command('clear_downloads');
+    await until(()=>sidebar.evaluate('currentState.download_items?.length===0'), 'completed downloads cleared');
+    assert.equal(await sidebar.evaluate('document.getElementById("clear-downloads").hidden'), true, 'clear button hidden when list is empty');
 
     await fetch(origin + '/hold-downloads');
     await source.evaluate(`document.getElementById('download').href='${origin}/slow-download';document.getElementById('download').click();true`);

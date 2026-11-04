@@ -58,6 +58,7 @@ details { position:relative; } summary { list-style:none; cursor:pointer; } summ
 .download-item small { display:block; color:var(--muted); margin:5px 0; font-variant-numeric:tabular-nums; }
 .download-item progress { width:100%; height:5px; accent-color:var(--accent); }
 .download-item button { padding:6px 8px; background:var(--active); font-size:11px; }
+.download-actions { display:flex; gap:6px; margin-top:6px; }
 #downloads-empty { color:var(--muted); font-size:12px; }
 .toast { flex-shrink:0; border:1px solid var(--line); padding:12px; background:var(--surface); border-radius:10px; font-size:12px; box-shadow:0 8px 24px #0004; } .toast button { color:var(--accent); padding:4px 0; display:block; margin-top:4px; }
 body.floating { min-width:0; margin:6px; height:calc(100vh - 12px); border-radius:14px; border:1px solid var(--line); box-shadow:0 8px 24px #0008; }
@@ -108,7 +109,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 <hr>
 <button data-action="open_history"><span class="item"><svg><use href="#clock"/></svg>History and bookmarks</span><kbd>Ctrl H</kbd></button>
 <button id="app-side-panel" data-action="toggle_side_panel" title="Right-click a tab and choose Open in side panel to dock a site here"><span class="item"><svg><use href="#book"/></svg><span id="app-side-panel-label">Show side panel</span></span></button>
-<button data-action="open_downloads"><span class="item"><svg><use href="#download"/></svg>Downloads</span><kbd>Ctrl J</kbd></button>
+<button data-action="toggle_downloads"><span class="item"><svg><use href="#download"/></svg>Downloads</span><kbd>Ctrl J</kbd></button>
 <button data-action="toggle_reader"><span class="item"><svg><use href="#book"/></svg>Reader view</span><kbd>F9</kbd></button>
 <button data-action="screenshot" title="Save the visible page as a PNG in Pictures\Veluno"><span class="item"><svg><use href="#camera"/></svg>Save screenshot</span></button>
 <button data-action="print"><span class="item"><svg><use href="#print"/></svg>Print…</span></button>
@@ -152,7 +153,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="toast-undo" title="Reopen closed tab (Ctrl+Shift+T)" hidden>Undo</button></div>
 </div>
 <footer class="footer">
-<section class="downloads-panel" id="downloads-panel" aria-label="Downloads" hidden><div class="downloads-heading"><strong>Downloads</strong><button class="icon" id="close-downloads" aria-label="Close downloads"><svg><use href="#close"/></svg></button></div><p id="downloads-empty">No downloads this session.</p><div id="download-items"></div></section>
+<section class="downloads-panel" id="downloads-panel" aria-label="Downloads" hidden><div class="downloads-heading"><strong>Downloads</strong><div style="display:flex;align-items:center;gap:6px"><button class="text-button" id="clear-downloads" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;padding:2px 4px" hidden>Clear</button><button class="icon" id="close-downloads" aria-label="Close downloads"><svg><use href="#close"/></svg></button></div></div><p id="downloads-empty">No downloads this session.</p><div id="download-items"></div></section>
 <button class="download-control" id="btn-downloads" title="Downloads (Ctrl+J)" aria-label="Downloads"><svg><use href="#download"/></svg><span>Downloads</span><small id="download-count"></small></button>
 <button class="sleep-control" id="btn-ram-saver" title="Unload background tabs to free memory (Ctrl+Shift+S)"><svg><use href="#moon"/></svg><span id="sleep-label">Sleep background tabs</span><svg><use href="#forward"/></svg></button>
 <div class="workspace-switcher"><details id="profiles"><summary aria-label="Switch workspace"><svg aria-hidden="true"><use href="#globe"/></svg><span id="profile-current">General</span></summary><div class="menu"><p>Workspaces</p><div id="spaces" aria-label="Workspaces"></div><div id="workspace-emojis" role="group" aria-label="Workspace icon"></div><form id="profile-form"><label for="profile-name">New workspace</label><input id="profile-name" placeholder="e.g. School" maxlength="40" required autocomplete="off"><small>Workspaces organize tabs and pins. Website logins are shared.</small><p id="profile-error" role="alert" hidden></p><button type="submit">Create workspace</button></form><div class="workspace-actions"><button type="button" id="rename-workspace">Rename workspace</button><button type="button" id="delete-workspace">Delete workspace</button></div>
@@ -360,6 +361,7 @@ window.updateState = state => {
  if(JSON.stringify(previous.download_items)!==JSON.stringify(state.download_items)) {
   const items=state.download_items||[];
   $('downloads-empty').hidden=items.length>0;
+  $('clear-downloads').hidden=!items.some(i=>i.status!=='downloading');
   $('download-items').replaceChildren(...items.slice().reverse().map(item=>{
    const row=document.createElement('div'); row.className='download-item';
    const name=document.createElement('strong'); name.textContent=item.path.split(/[\\/]/).pop()||'Download'; name.title=item.path;
@@ -370,7 +372,14 @@ window.updateState = state => {
    row.append(name,detail);
    if(item.status==='downloading'&&!isComplete) { const progress=document.createElement('progress'); progress.setAttribute('aria-label',`Downloading ${name.textContent}`); if(item.total>0) { progress.max=item.total; progress.value=item.received; } row.append(progress); }
    if(item.status==='downloading'&&!isComplete) { const button=document.createElement('button'); button.textContent='Cancel'; button.onclick=()=>Veluno.send('cancel_download',{id:item.id}); row.append(button); }
-   if(isComplete) { const button=document.createElement('button'); button.textContent='Show in folder'; button.onclick=()=>Veluno.send('reveal_download',{id:item.id}); row.append(button); }
+   if(isComplete) {
+    name.style.cursor='pointer';
+    name.onclick=()=>Veluno.send('open_download',{id:item.id});
+    const openBtn=document.createElement('button'); openBtn.textContent='Open'; openBtn.onclick=()=>Veluno.send('open_download',{id:item.id});
+    const folderBtn=document.createElement('button'); folderBtn.textContent='Show in folder'; folderBtn.onclick=()=>Veluno.send('reveal_download',{id:item.id});
+    const actions=document.createElement('div'); actions.className='download-actions'; actions.append(openBtn,folderBtn);
+    row.append(actions);
+   }
    return row;
   }));
  }
@@ -484,8 +493,9 @@ $('btn-clear-tabs').onclick=()=>Veluno.send('clear_unpinned_tabs');
 $('btn-ram-saver').onclick=()=>Veluno.send('sleep_inactive_tabs');
 $('toast-undo').onclick=()=>{ Veluno.send('restore_closed_tab'); $('toast').hidden=true; };
 $('close-downloads').onclick=()=>Veluno.send('close_downloads');
+$('clear-downloads').onclick=()=>Veluno.send('clear_downloads');
 $('dismiss-update').onclick=()=>{ const version=currentState.update_available?.version; if(version) { currentState.dismissed_update_version=version; $('update-banner').hidden=true; Veluno.send('dismiss_update',{version}); } };
-$('btn-downloads').onclick=()=>Veluno.send('open_downloads');
+$('btn-downloads').onclick=()=>Veluno.send('toggle_downloads');
 $('btn-default-browser').onclick=()=>Veluno.send('default_browser');
 $('activity-message').onclick=()=>{ const button=$('activity-message'); button.setAttribute('aria-expanded',String(button.getAttribute('aria-expanded')!=='true')); };
 $('dismiss-status').onclick=()=>{ $('activity').hidden=true; };
@@ -604,7 +614,7 @@ for(const menu of menus) {
 }
 tabMenu.addEventListener('keydown',e=>{ if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key)||tabMenu.hidden)return; e.preventDefault(); const items=[...tabMenu.querySelectorAll('button:not(:disabled)')]; const index=items.indexOf(document.activeElement); items[e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus(); });
 document.addEventListener('click',e=>{ for(const menu of menus) if(!menu.contains(e.target)) menu.open=false; if(!tabMenu.hidden&&!tabMenu.contains(e.target)) closeTabMenu(); });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') { closeTabMenu(); for(const menu of menus) if(menu.open) { menu.open=false; menu.querySelector('summary').focus(); } } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') { if(!$('downloads-panel').hidden) { e.preventDefault(); Veluno.send('close_downloads'); return; } closeTabMenu(); for(const menu of menus) if(menu.open) { menu.open=false; menu.querySelector('summary').focus(); } } });
 const sideResizeDir=e=>e.clientX<5?(e.clientY<8?'nw':e.clientY>window.innerHeight-8?'sw':'w'):e.clientY<5?'n':e.clientY>window.innerHeight-5?'s':'';
 document.addEventListener('mousemove',e=>{ const dir=sideResizeDir(e); document.body.style.cursor=dir==='nw'?'nwse-resize':dir==='sw'?'nesw-resize':dir==='w'?'ew-resize':dir==='n'||dir==='s'?'ns-resize':''; });
 document.addEventListener('mousedown',e=>{ if(e.button!==0||e.target.closest('button,input,summary,a')) return; const dir=sideResizeDir(e); if(dir) { e.preventDefault(); Veluno.send('resize_window',{direction:dir}); } });
