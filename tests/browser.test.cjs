@@ -154,6 +154,8 @@ for (const file of ['src/ui.html', 'src/start_page.html', 'src/new_tab.html', 's
   assert.ok(!html.includes('__COMMON_SCRIPT__'));
 }
 const uiHtml = fs.readFileSync('src/ui.html', 'utf8');
+assert.ok(uiHtml.includes('MB'), 'src/ui.html must format download size in MB');
+assert.ok(!uiHtml.includes("toFixed(1)} KB"), 'src/ui.html must not use KB for download progress');
 assert.ok(uiHtml.includes('<symbol id="veluno"'), 'src/ui.html must define #veluno logo symbol');
 assert.ok(uiHtml.includes("icon('veluno')"), 'src/ui.html must render #veluno icon for veluno://newtab');
 const expectedAssets = [

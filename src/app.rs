@@ -1708,6 +1708,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::DismissNewTab => { palette_open = false; if !headless && let Some(view) = views.get(&state.active_tab_id) { let _ = view.focus(); } },
                             Command::SwitchTab { id } => { state.switch_tab(id); palette_open = false; },
                             Command::CloseTab { id } => {
+                                downloads = desktop::download_counts(&views);
+                                state.active_downloads = downloads.values().sum();
+                                state.download_items = desktop::download_items();
                                 if downloads.get(&id).copied().unwrap_or(0) == 0 {
                                     if state.close_tab(id).is_none() && state.tabs.is_empty() {
                                         if may_exit(&state, &session) {
@@ -1984,8 +1987,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             }
                         }
                     },
-                    UserEvent::DownloadFinished(id, generation, success) => {
-                        if state.tabs.iter().any(|tab| tab.id == id && tab.generation == generation) || download_only.contains(&id) {
+                    UserEvent::DownloadFinished(id, _generation, success) => {
+                        if state.tabs.iter().any(|tab| tab.id == id) || download_only.contains(&id) {
                             if views.contains_key(&id) { last_download_host = Some(id); }
                             state.update_status = Some(if success { "Download complete. Open Downloads to view the file." } else { "Download interrupted. Open Downloads to retry or choose another location." }.into());
                         }

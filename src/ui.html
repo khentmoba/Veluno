@@ -364,12 +364,13 @@ window.updateState = state => {
    const row=document.createElement('div'); row.className='download-item';
    const name=document.createElement('strong'); name.textContent=item.path.split(/[\\/]/).pop()||'Download'; name.title=item.path;
    const detail=document.createElement('small');
-   const bytes=value=>`${(Math.max(0,value)/1024).toFixed(1)} KB`;
-   detail.textContent=item.status==='complete'?`Complete · ${bytes(item.received)}`:item.status==='cancelled'?`Cancelled · ${bytes(item.received)} received`:item.status==='interrupted'?`Interrupted · ${bytes(item.received)} received`:`Downloading · ${bytes(item.received)}${item.total>0?` of ${bytes(item.total)} (${Math.min(100,Math.floor(item.received/item.total*100))}%)`:''}`;
+   const bytes=value=>`${(Math.max(0,value)/(1024*1024)).toFixed(1)} MB`;
+   const isComplete=item.status==='complete'||(item.status==='downloading'&&item.total>0&&item.received>=item.total);
+   detail.textContent=isComplete?`Complete · ${bytes(item.received)}`:item.status==='cancelled'?`Cancelled · ${bytes(item.received)} received`:item.status==='interrupted'?`Interrupted · ${bytes(item.received)} received`:`Downloading · ${bytes(item.received)}${item.total>0?` of ${bytes(item.total)} (${Math.min(100,Math.floor(item.received/item.total*100))}%)`:''}`;
    row.append(name,detail);
-   if(item.status==='downloading') { const progress=document.createElement('progress'); progress.setAttribute('aria-label',`Downloading ${name.textContent}`); if(item.total>0) { progress.max=item.total; progress.value=item.received; } row.append(progress); }
-   if(item.status==='downloading') { const button=document.createElement('button'); button.textContent='Cancel'; button.onclick=()=>Veluno.send('cancel_download',{id:item.id}); row.append(button); }
-   if(item.status==='complete') { const button=document.createElement('button'); button.textContent='Show in folder'; button.onclick=()=>Veluno.send('reveal_download',{id:item.id}); row.append(button); }
+   if(item.status==='downloading'&&!isComplete) { const progress=document.createElement('progress'); progress.setAttribute('aria-label',`Downloading ${name.textContent}`); if(item.total>0) { progress.max=item.total; progress.value=item.received; } row.append(progress); }
+   if(item.status==='downloading'&&!isComplete) { const button=document.createElement('button'); button.textContent='Cancel'; button.onclick=()=>Veluno.send('cancel_download',{id:item.id}); row.append(button); }
+   if(isComplete) { const button=document.createElement('button'); button.textContent='Show in folder'; button.onclick=()=>Veluno.send('reveal_download',{id:item.id}); row.append(button); }
    return row;
   }));
  }
