@@ -95,6 +95,11 @@ export async function checkBrowserControls(sidebar, command, origin, port, artif
   await awakened.evaluate('recreatedTone.stop();recreatedAudio.close();true');
   console.log('Native tab ordering, workspace rename/delete with live draft retention, audio/mute events, and origin-scoped cookie/storage clearing passed.');
   await checkGlance(sidebar, awakened, origin, port, artifacts);
+  await command('set_setting', { key: 'accent', value: 'glacier' });
+  await until(() => sidebar.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()==='#8ecbff'`), 'accent applies live to the sidebar');
+  await command('set_setting', { key: 'accent', value: 'neutral' });
+  await until(() => sidebar.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()==='#dedee3'`), 'accent resets');
+  console.log('Accent color changes apply live to the sidebar.');
 }
 
 async function targets(port) {

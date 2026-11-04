@@ -2,7 +2,7 @@
 <html><head><meta charset="UTF-8"><style>
 :root { color-scheme:dark; font-family:"Segoe UI",system-ui,sans-serif; }
 html,body { margin:0; height:100%; overflow:hidden; background:#101011; user-select:none; }
-#bar { position:absolute; top:0; left:0; height:3px; width:100%; transform:scaleX(0); transform-origin:left; opacity:0; background:#dedee3; border-radius:0 2px 2px 0; z-index:1; }
+#bar { position:absolute; top:0; left:0; height:3px; width:100%; transform:scaleX(0); transform-origin:left; opacity:0; background:var(--accent,#dedee3); border-radius:0 2px 2px 0; z-index:1; }
 .chrome { position:absolute; bottom:0; left:0; right:0; height:34px; display:flex; background:#101011; border-bottom:1px solid #333338; visibility:hidden; transition:visibility 0s linear 280ms; }
 body.open .chrome { visibility:visible; transition:none; }
 #drag { flex:1; min-width:0; display:flex; align-items:center; gap:8px; padding:0 12px; overflow:hidden; }

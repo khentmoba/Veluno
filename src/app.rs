@@ -1725,7 +1725,13 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::ClearHistory => history::clear(),
                             Command::SetSetting { key, value } => match settings::set(&key, &value) {
                                 Ok(current) => {
-                                    if key == "search_engine" {
+                                    if key == "accent" {
+                                        let script = ui::accent_script();
+                                        for view in [&sidebar, &palette, &topbar, &popup_bar] { let _ = view.evaluate_script(&script); }
+                                        for tab in state.tabs.iter().filter(|tab| profile::is_internal(&tab.url)) {
+                                            if let Some(view) = views.get(&tab.id) { let _ = view.evaluate_script(&script); }
+                                        }
+                                    } else if key == "search_engine" {
                                         let script = ui::search_script();
                                         let _ = sidebar.evaluate_script(&script);
                                         let _ = palette.evaluate_script(&script);

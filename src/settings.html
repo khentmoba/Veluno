@@ -50,6 +50,8 @@ select { font:inherit; font-size:13px; color:var(--text); background:var(--activ
 <div class="row"><div><h2>Default browser</h2><p id="default-browser-status"></p></div><button class="btn" id="set-default-browser" data-send="default_browser">Open Windows settings</button></div>
 <div class="row"><div><h2>Check for updates automatically</h2><p>Veluno looks for a new version shortly after launch and every 6 hours.</p></div><button class="switch" role="switch" id="auto-update" aria-label="Check for updates automatically"></button></div>
 <div class="row"><div><h2>Import bookmarks</h2><p id="import-detail"></p></div><select id="import-source" aria-label="Browser to import from"></select><button class="btn" id="import-button">Import</button></div>
+<h2>Accent color</h2>
+<div class="choices three" id="accents" role="radiogroup" aria-label="Accent color"></div>
 <div class="row"><div><h2>Update now</h2><p>Check for a new version of Veluno.</p></div><button class="btn" data-send="check_updates">Check for updates</button></div>
 </section>
 
@@ -188,6 +190,14 @@ function renderEngines() {
  }));
 }
 renderEngines();
+function renderAccents() {
+ $('accents').replaceChildren(...data.accents.map(([id,name,color])=>{
+  const button=document.createElement('button'); button.className='choice'; button.setAttribute('role','radio'); button.setAttribute('aria-checked',String(data.settings.accent===id));
+  const dot=document.createElement('span'); dot.className='dot'; dot.style.borderColor=color; dot.style.background=color; const label=document.createElement('span'); label.textContent=name;
+  button.append(dot,label); button.onclick=()=>{ setting('accent',id); document.documentElement.style.setProperty('--accent',color); renderAccents(); }; return button;
+ }));
+}
+renderAccents();
 function renderExtension() {
  const state=data.ublock, wanted=data.settings.ad_blocker;
  let pill=['Not installed',''], detail='Blocks ads and trackers on the sites you visit.', action='';
