@@ -623,6 +623,14 @@ pub fn attach(
                 &mut token,
             )?;
         }
+        let focused = proxy.clone();
+        view.controller().add_GotFocus(
+            &FocusChangedEventHandler::create(Box::new(move |_, _| {
+                let _ = focused.send_event(UserEvent::Focused(id, generation));
+                Ok(())
+            })),
+            &mut token,
+        )?;
         let keys = proxy.clone();
         view.controller().add_AcceleratorKeyPressed(
             &AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {

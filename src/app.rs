@@ -115,6 +115,10 @@ pub enum Command {
         url: String,
     },
     ClosePopup,
+    SplitTab {
+        id: usize,
+    },
+    Unsplit,
     Glance {
         url: String,
     },
@@ -256,6 +260,7 @@ pub enum UserEvent {
     IncompleteLoad(usize, u64, String),
     Failed(usize, u64, String, String),
     Crashed(usize, u64),
+    Focused(usize, u64),
     Favicon(usize, u64, String),
     DownloadsChanged,
     DownloadStarted(usize, u64, bool, Option<String>),
@@ -315,6 +320,21 @@ fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, 
                 top_height,
             )),
         },
+    )
+}
+
+/// Splits the content area into two side-by-side panes with a window-margin gap.
+fn split_bounds(content: Rect, scale: f64) -> (Rect, Rect) {
+    let position = content.position.to_logical::<f64>(scale);
+    let size = content.size.to_logical::<f64>(scale);
+    let width = ((size.width - ui::WINDOW_MARGIN) / 2.).max(10.);
+    let pane = |x: f64| Rect {
+        position: Position::Logical(LogicalPosition::new(x, position.y)),
+        size: Size::Logical(LogicalSize::new(width, size.height)),
+    };
+    (
+        pane(position.x),
+        pane(position.x + width + ui::WINDOW_MARGIN),
     )
 }
 
@@ -1210,7 +1230,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut palette_shown = true;
     let mut palette_needs_open = false;
     let mut visible_id = None;
-    let mut last_content_bounds = None;
+    let mut placed: HashMap<usize, Rect> = HashMap::new();
+    let mut shown: Vec<usize> = Vec::new();
     let mut last_sidebar_state = String::new();
     let mut sleep_pending = HashSet::new();
     let mut recovery = recovery::Recovery::default();
@@ -1344,7 +1365,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         | Command::MoveTabToWorkspace { .. } | Command::ExpandPopup { .. }
                         | Command::ReorderTab { .. } | Command::RenameWorkspace { .. } | Command::DeleteWorkspace { .. } | Command::ToggleMute { .. }
                         | Command::DismissUpdate { .. }
-                        | Command::ToggleBookmark { .. } | Command::NewPrivateTab));
+                        | Command::ToggleBookmark { .. } | Command::NewPrivateTab
+                        | Command::SplitTab { .. } | Command::Unsplit));
                 match event {
                     UserEvent::Audio(id, generation, playing, muted) => {
                         if let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == id && tab.generation == generation) {
@@ -1524,6 +1546,13 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         if !headless { window.set_focus(); }
                     },
                     UserEvent::Frame => {},
+                    UserEvent::Focused(id, generation) => {
+                        // Clicking into the other split pane makes it the active tab.
+                        if id == state.active_tab_id || state.split_partner() != Some(id)
+                            || !state.tabs.iter().any(|tab| tab.id == id && tab.generation == generation) { return; }
+                        state.switch_tab(id);
+                        session_dirty = true;
+                    },
                     UserEvent::PaletteReady => { palette_needs_open = palette_open; },
                     UserEvent::External(urls) => {
                         if !headless { window.set_minimized(false); window.set_focus(); }
@@ -1639,6 +1668,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                     window.set_focus();
                                 }
                             },
+                            Command::SplitTab { id } => { if state.split_with(id) { palette_open = false; } },
+                            Command::Unsplit => { state.split = None; },
                             Command::ClosePopup => {
                                 *popup_host.view.borrow_mut() = None;
                                 popup_host.window.set_visible(false);
@@ -1928,6 +1959,16 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                 Err(error) => { state.update_status = Some(format!("Could not open this tab: {error}")); }
             }
         }
+        let pair = state.split_pair();
+        if let Some(partner) = pair.and_then(|_| state.split_partner())
+            && let std::collections::hash_map::Entry::Vacant(entry) = views.entry(partner)
+        {
+            match content(&window, &mut context, &mut state, partner, &proxy, &popup_host, false) {
+                Ok(view) => { entry.insert(view); created = true; },
+                Err(error) => { state.split = None; state.update_status = Some(format!("Could not open split view: {error}")); },
+            }
+        }
+        let pair = state.split_pair();
         zooms.retain(|id, _| views.contains_key(id));
         hidden_at.retain(|id, _| views.contains_key(id));
         state.zoom = zooms.get(&active_id).copied().unwrap_or(100);
@@ -1950,20 +1991,30 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             let _ = topbar.set_bounds(topbar_bounds);
             return;
         }
-        let geometry = (window.inner_size(), window.scale_factor(), state.sidebar_collapsed);
-        if last_content_bounds != Some(geometry) {
-            for view in views.values() { let _ = view.set_bounds(content_bounds); }
-            last_content_bounds = Some(geometry);
+        let panes = split_bounds(content_bounds, window.scale_factor());
+        let pane = |id: usize| match pair { Some([left, _]) if id == left => panes.0, Some([_, right]) if id == right => panes.1, _ => content_bounds };
+        placed.retain(|id, _| views.contains_key(id));
+        for (id, view) in &views {
+            let target = pane(*id);
+            if placed.get(id) != Some(&target) { let _ = view.set_bounds(target); placed.insert(*id, target); }
         }
-        if visible_id != Some(active_id) || created {
-            if let Some(id) = visible_id && let Some(view) = views.get(&id) { desktop::show(view, false); hidden_at.entry(id).or_insert(now); }
-            if let Some(view) = views.get(&active_id) { desktop::show(view, true); hidden_at.remove(&active_id); }
+        let wanted: Vec<usize> = pair.map_or_else(|| vec![active_id], |pair| pair.to_vec());
+        if wanted != shown || created {
+            for id in shown.iter().filter(|id| !wanted.contains(id)) {
+                if let Some(view) = views.get(id) { desktop::show(view, false); hidden_at.entry(*id).or_insert(now); }
+            }
+            for id in &wanted {
+                if let Some(view) = views.get(id) { desktop::show(view, true); hidden_at.remove(id); }
+            }
+            shown = wanted;
         }
-        let physical = content_bounds.size.to_physical::<u32>(window.scale_factor());
         let radius = if window.is_maximized() || window.fullscreen().is_some() { 0 } else { (ui::CONTENT_RADIUS * window.scale_factor()) as i32 };
-        let shape = (physical.width, physical.height, radius);
         rounded.retain(|id, _| views.contains_key(id));
-        for (id, view) in &views { if rounded.get(id) != Some(&shape) { desktop::round(view, shape.0 as i32, shape.1 as i32, radius); rounded.insert(*id, shape); } }
+        for (id, view) in &views {
+            let physical = pane(*id).size.to_physical::<u32>(window.scale_factor());
+            let shape = (physical.width, physical.height, radius);
+            if rounded.get(id) != Some(&shape) { desktop::round(view, shape.0 as i32, shape.1 as i32, radius); rounded.insert(*id, shape); }
+        }
         let _ = topbar.set_bounds(topbar_bounds);
         if !palette_open {
             if state.sidebar_collapsed {

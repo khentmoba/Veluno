@@ -100,6 +100,33 @@ export async function checkBrowserControls(sidebar, command, origin, port, artif
   await command('set_setting', { key: 'accent', value: 'neutral' });
   await until(() => sidebar.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()==='#dedee3'`), 'accent resets');
   console.log('Accent color changes apply live to the sidebar.');
+  await checkSplitView(sidebar, command, awakened, a, b, origin, port, artifacts);
+}
+
+async function checkSplitView(sidebar, command, left, a, b, origin, port, artifacts) {
+  const other = await sidebar.evaluate('currentState.active_tab_id');
+  await command('switch_tab', { id: a });
+  await command('split_tab', { id: b });
+  await until(() => sidebar.evaluate(`JSON.stringify(currentState.split)===${JSON.stringify(JSON.stringify([a, b]))}`), 'split pair');
+  const right = await connect(target => target.url === origin + '/controls-b', port);
+  const visible = view => view.evaluate('document.visibilityState==="visible"');
+  await until(async () => await visible(left) && await visible(right), 'both split panes are visible');
+  const [leftWidth, rightWidth, sidebarWidth] = await Promise.all([left.evaluate('innerWidth'), right.evaluate('innerWidth'), sidebar.evaluate('innerWidth')]);
+  assert.ok(Math.abs(leftWidth - rightWidth) <= 1, `panes share the width: ${leftWidth} vs ${rightWidth}`);
+  assert.ok(leftWidth < 300, `each pane is half the content area: ${leftWidth} beside a ${sidebarWidth}px sidebar`);
+  assert.equal(await sidebar.evaluate(`document.querySelectorAll('.tab.split').length`), 2, 'sidebar marks both split tabs');
+  if (artifacts) {
+    const screenshot = await sidebar.call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(artifacts, 'split-view-sidebar.png'), Buffer.from(screenshot.data, 'base64'));
+  }
+  await command('switch_tab', { id: other });
+  await until(async () => !(await visible(left)) && !(await visible(right)), 'leaving the split hides both panes');
+  await command('switch_tab', { id: b });
+  await until(async () => await visible(left) && await visible(right), 'selecting either split tab shows both');
+  await command('unsplit');
+  await until(async () => !(await visible(left)) && await visible(right), 'closing split view keeps only the active tab');
+  assert.ok(await right.evaluate('innerWidth') > leftWidth + 100, 'the active tab regains the full width');
+  console.log('Split View shows two tabs side by side, follows tab selection, and closes back to one tab.');
 }
 
 async function targets(port) {

@@ -34,7 +34,7 @@ svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7;
 [hidden] { display:none!important; }
 .tabs { flex:1; min-height:0; overflow:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; margin:0 -4px; padding:0 4px; }
 .tab-group { display:flex; flex-direction:column; gap:4px; } .tab-group:not(:empty)+.tab-group:not(:empty) { border-top:1px solid #262629; margin-top:10px; padding-top:10px; }
-.tab { display:flex; align-items:center; gap:4px; min-height:40px; border-radius:9px; position:relative; } .tab:hover { background:var(--surface); } .tab.active { background:var(--active); box-shadow:inset 0 0 0 1px #ffffff0d; } .tab.active .tab-main { font-weight:600; }
+.tab { display:flex; align-items:center; gap:4px; min-height:40px; border-radius:9px; position:relative; } .tab:hover { background:var(--surface); } .tab.active { background:var(--active); box-shadow:inset 0 0 0 1px #ffffff0d; } .tab.split { box-shadow:inset 3px 0 0 var(--accent); } .tab.split.active { box-shadow:inset 3px 0 0 var(--accent),inset 0 0 0 1px #ffffff0d; } .tab.active .tab-main { font-weight:600; }
 .tab-main { min-width:0; display:flex; gap:10px; align-items:center; flex:1; text-align:left; height:40px; padding:0 9px; border-radius:9px; } .tab-main:hover { background:transparent; } .favicon { width:16px; height:16px; flex-shrink:0; display:grid; place-items:center; color:var(--accent); font-size:11px; font-weight:600; } .favicon svg { width:14px; height:14px; } .favicon { position:relative; } .favicon img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; } .tab-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .tab.sleeping:not(.active) .tab-title { color:var(--muted); } .sleep-icon { color:var(--muted); width:13px; height:13px; }
 .close-tab { width:28px; height:28px; display:grid; place-items:center; opacity:0; margin-right:5px; flex-shrink:0; } .close-tab svg { width:14px; } .tab:hover .close-tab,.tab:focus-within .close-tab,.tab.active .close-tab { opacity:1; } .close-tab:hover { background:#45454b; color:var(--text); }
 .empty { text-align:center; color:var(--muted); line-height:1.6; padding:24px 10px; }
@@ -197,7 +197,7 @@ function displayAddress(url) { if(!url || url==='veluno://newtab') return ''; tr
 function renderTabs() {
  const tabs=currentState.tabs.filter(t=>t.workspace_id===currentState.active_workspace_id);
  const query=$('tab-search').value.trim().toLowerCase();
- const signature=JSON.stringify([tabs.map(tab=>[tab.id,tab.title,tab.url,tab.is_pinned,tab.is_sleeping,tab.favicon,tab.error,tab.is_playing_audio,tab.is_muted]),query,currentState.active_workspace_id]);
+ const signature=JSON.stringify([currentState.split,tabs.map(tab=>[tab.id,tab.title,tab.url,tab.is_pinned,tab.is_sleeping,tab.favicon,tab.error,tab.is_playing_audio,tab.is_muted]),query,currentState.active_workspace_id]);
  if(signature===tabSignature) {
   document.querySelectorAll('.tab').forEach(row=>{
    const active=Number(row.dataset.tabId)===currentState.active_tab_id;
@@ -225,12 +225,12 @@ function renderTabs() {
   if(query && !(tab.title+' '+tab.url).toLowerCase().includes(query)) continue;
   visible++;
   const row=oldRows.get(tab.id)||document.createElement('div');
-  const rowSignature=JSON.stringify([tab.title,tab.url,tab.is_pinned,tab.is_sleeping,tab.favicon,tab.error,tab.is_playing_audio,tab.is_muted,tab.id===currentState.active_tab_id]);
+  const rowSignature=JSON.stringify([(currentState.split||[]).includes(tab.id),tab.title,tab.url,tab.is_pinned,tab.is_sleeping,tab.favicon,tab.error,tab.is_playing_audio,tab.is_muted,tab.id===currentState.active_tab_id]);
   if(row.dataset.signature===rowSignature) { (tab.is_pinned?pinned:normal).push(row); continue; }
   row.dataset.signature=rowSignature;
   row.dataset.tabId=tab.id;
   row.replaceChildren();
-  row.className='tab'+(tab.id===currentState.active_tab_id?' active':'')+(tab.is_sleeping?' sleeping':'')+(tab.error?' failed':'');
+  row.className='tab'+(tab.id===currentState.active_tab_id?' active':'')+((currentState.split||[]).includes(tab.id)?' split':'')+(tab.is_sleeping?' sleeping':'')+(tab.error?' failed':'');
   const select=document.createElement('button'); select.className='tab-main'; select.title=tab.title+'\n'+tab.url+'\nReorder: Alt+Shift+Up/Down'+(tab.is_pinned?'\nPinned':'')+(tab.is_sleeping?'\nSleeping — select to wake':'');
   if(tab.id===currentState.active_tab_id) select.setAttribute('aria-current','page');
   const favicon=document.createElement('span'); favicon.className='favicon'; favicon.setAttribute('aria-hidden','true');
@@ -502,6 +502,8 @@ function openTabContextMenu(tab,clientY) {
  addItem('Move tab up',()=>moveTab(tab,false));
  addItem('Move tab down',()=>moveTab(tab,true));
  addItem('Duplicate tab',()=>Veluno.send('duplicate_tab',{id:tab.id}));
+ if((currentState.split||[]).includes(tab.id)) addItem('Close split view',()=>Veluno.send('unsplit'));
+ else if(tab.id!==currentState.active_tab_id&&tab.workspace_id===currentState.active_workspace_id) addItem('Split with current tab',()=>Veluno.send('split_tab',{id:tab.id}));
  addItem(tab.is_sleeping?'Wake tab':'Sleep tab',()=>Veluno.send(tab.is_sleeping?'switch_tab':'toggle_sleep',{id:tab.id}),tab.id===currentState.active_tab_id);
  const privateIds=(currentState.workspaces||[]).filter(w=>w.private).map(w=>w.id);
  const others=privateIds.includes(tab.workspace_id)?[]:(currentState.workspaces||[]).filter(w=>w.id!==tab.workspace_id&&!w.private);
