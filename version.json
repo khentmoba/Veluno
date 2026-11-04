@@ -1,6 +1,6 @@
 {
-  "version": "0.3.3",
-  "release_url": "https://github.com/khentmoba/Veluno/releases/tag/v0.3.3",
-  "download_url": "https://github.com/khentmoba/Felaris/releases/download/v0.3.3/felaris.exe",
-  "summary": "- Rename Felaris to Veluno with a new logo and Windows icons.\n- Keep existing profiles, saved tabs, bookmarks, and default-browser links during upgrades.\n- Speed up local search suggestions and rank obvious site and tab matches first.\n- Smooth search, sidebar, tab, and loading animations, including interrupted transitions.\n- Remember dismissed update notices and show download progress.\n- Preserve source pages and unsaved drafts when links start downloads.\n- Deliver the Windows installer directly in Discord release announcements."
+  "version": "0.3.4",
+  "release_url": "https://github.com/khentmoba/Veluno/releases/tag/v0.3.4",
+  "download_url": "https://github.com/khentmoba/Felaris/releases/download/v0.3.4/felaris.exe",
+  "summary": "- Block ads and trackers using Brave's adblock engine and list catalog, updated daily in the background.\n- Switch to full uBlock Origin in WebView2 with protection against cookie banners, app prompts, and link tracking.\n- Upgrade existing profiles automatically from uBlock Origin Lite to full uBlock Origin.\n- Recover interrupted YouTube watch pages automatically instead of stalling on skeleton placeholders.\n- Skip re-indexing installed extensions on startup and tab creation.\n- Show \"Veluno is up to date\" as an expiring toast instead of keeping it pinned in the sidebar.\n- Separate sidebar feedback rows with clean borders and replace tab restore with a compact Undo button."
 }
