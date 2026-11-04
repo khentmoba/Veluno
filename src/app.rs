@@ -413,6 +413,7 @@ fn side_panel(
         }
     }
     let view = builder.with_url(url).build_as_child(window)?;
+    desktop::block_view_ads(&view);
     let _ = desktop::apply_privacy(&view, &settings::get());
     Ok(view)
 }
