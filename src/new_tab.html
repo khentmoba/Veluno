@@ -96,12 +96,14 @@ function render() {
    try {
     const site=new URL(option.url);
     if(['https:','http:'].includes(site.protocol)) {
-     const known=[option,...(state.tabs||[]),...(state.shortcuts||[])].find(item=>{
+     const root=site.origin+'/favicon.ico';
+     const known=[option,...(state.tabs||[]),...(state.shortcuts||[]),...(historyEntries||[])].find(item=>{
       try { return item.favicon&&new URL(item.url).hostname===site.hostname&&['https:','http:'].includes(new URL(item.favicon).protocol); } catch { return false; }
      });
      const img=document.createElement('img'); img.alt=''; img.referrerPolicy='no-referrer'; img.hidden=true;
-     img.onload=()=>{img.hidden=false;svg.style.visibility='hidden';}; img.onerror=()=>img.remove();
-     img.src=known?.favicon||site.origin+'/favicon.ico'; icon.append(img);
+     img.onload=()=>{img.hidden=false;svg.style.visibility='hidden';};
+     img.onerror=()=>{ img.hidden=true; svg.style.visibility=''; if(img.src!==root) img.src=root; else img.remove(); };
+     img.src=known?.favicon||root; icon.append(img);
     }
    } catch {}
   }

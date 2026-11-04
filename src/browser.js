@@ -69,7 +69,7 @@
      } else {
       const label=kind==='bookmark'?'Bookmark':kind==='history'?'History':'Shortcut';
       option={title:data.title,detail:`${label} · ${entry.url}`,url:entry.url};
-      if(kind==='shortcut') option.favicon=entry.favicon;
+      if(entry.favicon) option.favicon=entry.favicon;
       option[kind]=true;
      }
      options.splice(index,0,{option,score});
