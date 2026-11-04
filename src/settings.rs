@@ -37,6 +37,7 @@ pub struct Settings {
     pub save_passwords: bool,
     pub autofill: bool,
     pub accent: String,
+    pub sidebar_right: bool,
 }
 
 impl Default for Settings {
@@ -50,6 +51,7 @@ impl Default for Settings {
             save_passwords: false,
             autofill: true,
             accent: "neutral".into(),
+            sidebar_right: false,
         }
     }
 }
@@ -85,6 +87,14 @@ pub fn engine() -> (&'static str, &'static str) {
     (name, url)
 }
 
+/// Whether the sidebar sits on the right edge of the window.
+pub fn sidebar_right() -> bool {
+    current()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .sidebar_right
+}
+
 pub fn accent() -> &'static str {
     let id = get().accent;
     ACCENTS
@@ -110,6 +120,7 @@ pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
         }
         ("save_passwords", Value::Bool(on)) => settings.save_passwords = *on,
         ("autofill", Value::Bool(on)) => settings.autofill = *on,
+        ("sidebar_right", Value::Bool(on)) => settings.sidebar_right = *on,
         ("accent", Value::String(id)) if ACCENTS.iter().any(|(key, ..)| key == id) => {
             settings.accent = id.clone()
         }
@@ -135,6 +146,7 @@ mod tests {
         assert_eq!(settings.tracking_prevention, "balanced");
         assert!(!settings.save_passwords && settings.autofill);
         assert_eq!(settings.accent, "neutral");
+        assert!(!settings.sidebar_right);
     }
 
     #[test]

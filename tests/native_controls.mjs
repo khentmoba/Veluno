@@ -101,6 +101,13 @@ export async function checkBrowserControls(sidebar, command, origin, port, artif
   await until(() => sidebar.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()==='#dedee3'`), 'accent resets');
   console.log('Accent color changes apply live to the sidebar.');
   await checkSplitView(sidebar, command, awakened, a, b, origin, port, artifacts);
+  const space = await sidebar.evaluate('currentState.active_workspace_id');
+  await sidebar.evaluate(`document.getElementById('profiles').open=true;document.querySelector('#workspace-emojis button[aria-label="Use \u{1F4DA} as the workspace icon"]').click();true`);
+  await until(() => sidebar.evaluate(`currentState.workspaces.find(w=>w.id===${space}).emoji==='\u{1F4DA}'&&document.getElementById('workspace-emoji').textContent==='\u{1F4DA}'&&!document.getElementById('workspace-emoji').hidden`), 'workspace emoji shows in the heading');
+  assert.ok(await sidebar.evaluate(`document.getElementById('profile-current').textContent.startsWith('\u{1F4DA} ')`));
+  await sidebar.evaluate(`document.querySelector('#workspace-emojis button[aria-label="No workspace icon"]').click();document.getElementById('profiles').open=false;true`);
+  await until(() => sidebar.evaluate(`!currentState.workspaces.find(w=>w.id===${space}).emoji&&document.getElementById('workspace-emoji').hidden`), 'workspace emoji clears');
+  console.log('Workspace emoji icons can be chosen from the workspace menu and cleared.');
 }
 
 async function checkSplitView(sidebar, command, left, a, b, origin, port, artifacts) {

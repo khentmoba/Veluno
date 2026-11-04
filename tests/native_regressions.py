@@ -21,6 +21,58 @@ from update_restore import check_update_restore
 from topbar_animation import check_topbar_animation
 
 
+def visible_panels(process_id):
+    """Visible child WebViews of the main window as (x, width, height) in client pixels."""
+    user32 = ctypes.WinDLL('user32', use_last_error=True)
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.GetParent.argtypes = [wintypes.HWND]
+    user32.GetParent.restype = wintypes.HWND
+    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    user32.ScreenToClient.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.EnumChildWindows.argtypes = [wintypes.HWND, callback_type, wintypes.LPARAM]
+    user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+    roots = []
+
+    @callback_type
+    def root(hwnd, _):
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value == process_id:
+            rect = wintypes.RECT()
+            user32.GetClientRect(hwnd, ctypes.byref(rect))
+            roots.append((rect.right, hwnd))
+        return True
+
+    user32.EnumWindows(root, 0)
+    parent = max(roots)[1]
+    panels = []
+
+    @callback_type
+    def child(hwnd, _):
+        if user32.GetParent(hwnd) == parent and user32.GetWindowLongW(hwnd, -16) & 0x10000000:
+            rect = wintypes.RECT()
+            user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            origin = wintypes.POINT(rect.left, rect.top)
+            user32.ScreenToClient(parent, ctypes.byref(origin))
+            if rect.bottom - rect.top > 100:
+                panels.append((origin.x, rect.right - rect.left, rect.bottom - rect.top))
+        return True
+
+    user32.EnumChildWindows(parent, child, 0)
+    return panels
+
+
+def sidebar_side(process_id):
+    panels = visible_panels(process_id)
+    if len(panels) != 2:
+        return None
+    sidebar, content = sorted(panels, key=lambda panel: panel[1])
+    return 'right' if sidebar[0] > content[0] else 'left'
+
+
 def assert_sidebar_above_content(process_id, palette_open=False):
     user32 = ctypes.WinDLL('user32', use_last_error=True)
     callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -273,6 +325,19 @@ def main():
                            check=True, timeout=90)
             checks.append('Download-only tabs close without cancelling transfers; source documents, drafts, redirects, and Home survive')
             checks.append('Native keyboard, pointer selection, site permission decisions, default browser state, and DOM checks at desktop and minimum sizes')
+            assert sidebar_side(process.pid) == 'left', visible_panels(process.pid)
+            command('set_setting', key='sidebar_right', value=True)
+            deadline = time.monotonic() + 10
+            while sidebar_side(process.pid) != 'right':
+                assert time.monotonic() < deadline, f'Sidebar did not move right: {visible_panels(process.pid)}'
+                time.sleep(.1)
+            assert sidebar('document.body.classList.contains("right")')
+            command('set_setting', key='sidebar_right', value=False)
+            deadline = time.monotonic() + 10
+            while sidebar_side(process.pid) != 'left':
+                assert time.monotonic() < deadline, f'Sidebar did not return left: {visible_panels(process.pid)}'
+                time.sleep(.1)
+            checks.append('The sidebar moves to the right edge and back live from Settings')
 
             source = next(tab['id'] for tab in sidebar('currentState.tabs') if tab['url'] == origin + '/next')
             command('duplicate_tab', id=source)

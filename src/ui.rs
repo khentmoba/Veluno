@@ -39,7 +39,14 @@ pub fn accent_script() -> String {
 }
 
 pub fn get_ui_html() -> String {
-    themed(include_str!("ui.html")).replace("__COMMON_SCRIPT__", &script())
+    let body = if settings::sidebar_right() {
+        "<body class=\"right\">"
+    } else {
+        "<body>"
+    };
+    themed(include_str!("ui.html"))
+        .replacen("<body>", body, 1)
+        .replace("__COMMON_SCRIPT__", &script())
 }
 
 pub fn get_new_tab_html() -> String {

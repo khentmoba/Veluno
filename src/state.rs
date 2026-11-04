@@ -8,6 +8,9 @@ pub struct Workspace {
     pub name: String,
     pub icon: String,
     pub accent: String,
+    /// An emoji shown beside the workspace name, chosen by the user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
     /// Private profiles open InPrivate pages and are never saved or recorded in history.
     #[serde(default)]
     pub private: bool,
@@ -122,6 +125,7 @@ impl BrowserState {
             name: "General".into(),
             icon: "home".into(),
             accent: "#dedee3".into(),
+            emoji: None,
             private: false,
         }];
 
@@ -497,6 +501,7 @@ impl BrowserState {
             name: name.into(),
             icon: "globe".into(),
             accent: "#dedee3".into(),
+            emoji: None,
             private: false,
         });
         self.switch_workspace(id);
@@ -521,6 +526,21 @@ impl BrowserState {
             .find(|w| w.id == id && !w.private)
             .ok_or("This workspace cannot be renamed.")?;
         workspace.name = name.into();
+        Ok(())
+    }
+
+    /// Sets or clears (with an empty string) a regular workspace's emoji.
+    pub fn set_workspace_emoji(&mut self, id: usize, emoji: &str) -> Result<(), String> {
+        let emoji = emoji.trim();
+        if emoji.chars().count() > 8 || emoji.chars().any(|c| c.is_ascii() || c.is_control()) {
+            return Err("Choose a single emoji for the workspace icon.".into());
+        }
+        let workspace = self
+            .workspaces
+            .iter_mut()
+            .find(|w| w.id == id && !w.private)
+            .ok_or("This workspace's icon cannot be changed.")?;
+        workspace.emoji = (!emoji.is_empty()).then(|| emoji.into());
         Ok(())
     }
 
@@ -583,6 +603,7 @@ impl BrowserState {
                 name: "Private".into(),
                 icon: "private".into(),
                 accent: "#dedee3".into(),
+                emoji: None,
                 private: true,
             });
             id
@@ -1054,6 +1075,29 @@ impl BrowserState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_emoji_is_validated_and_clearable() {
+        let mut state = BrowserState::new();
+        assert!(state.set_workspace_emoji(1, "\u{1F4DA}").is_ok());
+        assert_eq!(state.workspaces[0].emoji.as_deref(), Some("\u{1F4DA}"));
+        assert!(state.set_workspace_emoji(1, "<b>").is_err());
+        assert!(
+            state
+                .set_workspace_emoji(1, "\u{1F468}\u{200D}\u{1F4BB}")
+                .is_ok()
+        );
+        assert!(state.set_workspace_emoji(1, "").is_ok());
+        assert_eq!(state.workspaces[0].emoji, None);
+        let private = state.open_private_tab();
+        let private = state
+            .tabs
+            .iter()
+            .find(|t| t.id == private)
+            .unwrap()
+            .workspace_id;
+        assert!(state.set_workspace_emoji(private, "\u{1F4DA}").is_err());
+    }
 
     #[test]
     fn split_view_keeps_both_tabs_awake_and_ends_when_a_tab_leaves() {

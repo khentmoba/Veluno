@@ -39,6 +39,7 @@ svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7;
 .close-tab { width:28px; height:28px; display:grid; place-items:center; opacity:0; margin-right:5px; flex-shrink:0; } .close-tab svg { width:14px; } .tab:hover .close-tab,.tab:focus-within .close-tab,.tab.active .close-tab { opacity:1; } .close-tab:hover { background:#45454b; color:var(--text); }
 .empty { text-align:center; color:var(--muted); line-height:1.6; padding:24px 10px; }
 .footer { border-top:1px solid var(--line); padding-top:10px; display:flex; flex-direction:column; gap:10px; } .workspace-switcher { display:flex; align-items:center; gap:6px; } #profiles { flex:1; min-width:0; } #profiles summary { display:flex; align-items:center; gap:8px; min-height:34px; padding:6px 8px; border-radius:8px; } #profile-current { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } #profiles .menu { left:0; right:auto; width:236px; } #spaces { display:flex; flex-direction:column; gap:4px; max-height:180px; overflow:auto; scrollbar-width:thin; } .space { min-height:36px; color:var(--muted); overflow-wrap:anywhere; } #profile-form { display:flex; flex-direction:column; gap:8px; padding:10px; border-top:1px solid var(--line); margin-top:8px; } #profile-name { width:100%; padding:9px; background:var(--bg); border:1px solid var(--line); border-radius:8px; } #profile-form button { background:var(--active); justify-content:center; } #profile-form small { color:var(--muted); line-height:1.5; } #profile-error { color:var(--text); margin:0; } .space[aria-pressed="true"] { background:var(--active); color:var(--accent); } .space svg { width:17px; }
+#workspace-emojis { display:flex; flex-wrap:wrap; gap:2px; padding:6px 4px 0; } #workspace-emojis button { width:30px; height:30px; display:grid; place-items:center; font-size:15px; padding:0; } #workspace-emojis button[aria-pressed="true"] { background:var(--active); box-shadow:inset 0 0 0 1px var(--accent); } #workspace-emoji { font-size:14px; line-height:1; }
 .sleep-control { display:flex; align-items:center; gap:8px; padding:8px; color:var(--muted); font-size:11px; text-align:left; } .sleep-control svg { width:14px; height:14px; } .sleep-control span { flex:1; }
 details { position:relative; } summary { list-style:none; cursor:pointer; } summary::-webkit-details-marker { display:none; } .menu { max-height:min(440px,calc(100vh - 64px)); overflow:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; position:absolute; bottom:42px; right:0; width:244px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:6px; box-shadow:0 12px 30px #0005; z-index:10; } .menu button { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; padding:10px; text-align:left; font-size:12px; } .menu hr { border:0; border-top:1px solid var(--line); margin:5px; } .menu p { margin:8px 10px; font-size:11px; color:var(--muted); line-height:1.5; }
 .app-menu .menu { top:38px; bottom:auto; left:0; right:auto; width:236px; } #tab-context-menu { bottom:auto; right:auto; left:12px; width:220px; z-index:30; } .menu .item { display:flex; align-items:center; gap:10px; } .menu .item svg { width:16px; height:16px; color:var(--muted); } .menu kbd { white-space:nowrap; }
@@ -137,7 +138,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 <div id="site-confirm" hidden><p>This can sign you out across regular workspaces. Shared cookies may affect related subdomains. The page will reload.</p><div class="site-actions"><button type="button" id="cancel-clear-site">Cancel</button><button type="button" id="confirm-clear-site">Clear data</button></div></div>
 </section>
 </form>
-<div class="workspace-heading"><svg aria-hidden="true"><use id="workspace-icon" href="#home"/></svg><span id="workspace-name">General</span><span class="count" id="tab-count">1 tab</span></div>
+<div class="workspace-heading"><span id="workspace-emoji" aria-hidden="true" hidden></span><svg aria-hidden="true" id="workspace-svg"><use id="workspace-icon" href="#home"/></svg><span id="workspace-name">General</span><span class="count" id="tab-count">1 tab</span></div>
 <div class="tab-tools"><button class="new-tab" id="btn-add-tab" title="New tab (Ctrl+T)" aria-label="New tab"><svg><use href="#plus"/></svg><span>New tab</span><kbd>Ctrl T</kbd></button><button class="icon" id="btn-search-tabs" title="Search tabs" aria-label="Search tabs" aria-expanded="false"><svg><use href="#search"/></svg></button></div>
 <input id="tab-search" type="search" aria-label="Filter tabs in this workspace" placeholder="Find a tab…" hidden>
 <section class="tabs" aria-label="Tabs in this workspace"><div id="pinned-tabs" class="tab-group" aria-label="Pinned tabs"></div><div id="tabs-container" class="tab-group" aria-label="Open tabs"></div><p class="empty" id="empty-tabs" hidden>No matching tabs.<br>Try a different title or address.</p></section>
@@ -153,7 +154,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 <section class="downloads-panel" id="downloads-panel" aria-label="Downloads" hidden><div class="downloads-heading"><strong>Downloads</strong><button class="icon" id="close-downloads" aria-label="Close downloads"><svg><use href="#close"/></svg></button></div><p id="downloads-empty">No downloads this session.</p><div id="download-items"></div></section>
 <button class="download-control" id="btn-downloads" title="Downloads (Ctrl+J)" aria-label="Downloads"><svg><use href="#download"/></svg><span>Downloads</span><small id="download-count"></small></button>
 <button class="sleep-control" id="btn-ram-saver" title="Unload background tabs to free memory (Ctrl+Shift+S)"><svg><use href="#moon"/></svg><span id="sleep-label">Sleep background tabs</span><svg><use href="#forward"/></svg></button>
-<div class="workspace-switcher"><details id="profiles"><summary aria-label="Switch workspace"><svg aria-hidden="true"><use href="#globe"/></svg><span id="profile-current">General</span></summary><div class="menu"><p>Workspaces</p><div id="spaces" aria-label="Workspaces"></div><form id="profile-form"><label for="profile-name">New workspace</label><input id="profile-name" placeholder="e.g. School" maxlength="40" required autocomplete="off"><small>Workspaces organize tabs and pins. Website logins are shared.</small><p id="profile-error" role="alert" hidden></p><button type="submit">Create workspace</button></form><div class="workspace-actions"><button type="button" id="rename-workspace">Rename workspace</button><button type="button" id="delete-workspace">Delete workspace</button></div>
+<div class="workspace-switcher"><details id="profiles"><summary aria-label="Switch workspace"><svg aria-hidden="true"><use href="#globe"/></svg><span id="profile-current">General</span></summary><div class="menu"><p>Workspaces</p><div id="spaces" aria-label="Workspaces"></div><div id="workspace-emojis" role="group" aria-label="Workspace icon"></div><form id="profile-form"><label for="profile-name">New workspace</label><input id="profile-name" placeholder="e.g. School" maxlength="40" required autocomplete="off"><small>Workspaces organize tabs and pins. Website logins are shared.</small><p id="profile-error" role="alert" hidden></p><button type="submit">Create workspace</button></form><div class="workspace-actions"><button type="button" id="rename-workspace">Rename workspace</button><button type="button" id="delete-workspace">Delete workspace</button></div>
 <div id="delete-workspace-panel" hidden><label for="workspace-destination">Move tabs and pins to</label><select id="workspace-destination"></select><p>Tabs stay open. Shared website data is kept.</p><button type="button" id="confirm-delete-workspace">Move tabs and delete workspace</button><button type="button" id="cancel-delete-workspace">Cancel</button></div>
 <button type="button" id="cancel-rename-workspace" hidden>Cancel rename</button>
 </div></details><details id="browser-menu"><summary class="icon" title="Tab actions" aria-label="Tab actions"><svg><use href="#more"/></svg></summary><div class="menu"><button id="btn-pin-tab">Pin current tab</button><button id="btn-reopen-tab">Reopen closed tab <kbd>Ctrl Shift T</kbd></button><button id="btn-clear-tabs">Close other unpinned tabs</button><hr><button id="btn-check-update">Check for updates</button><button id="btn-default-browser">Set default browser?</button><hr><p>Workspaces: Alt + 1-9<br>Address bar: Ctrl + L<br>Toggle sidebar: Ctrl + Shift + B<br>Bookmark page: Ctrl + D<br>Find in page: Ctrl + F</p></div></details></div>
@@ -301,9 +302,11 @@ window.updateState = state => {
  if(state.sidebar_collapsed) { $('tab-search').hidden=true; $('tab-search').value=''; $('btn-search-tabs').setAttribute('aria-expanded','false'); }
  const workspace=state.workspaces.find(w=>w.id===state.active_workspace_id);
  $('workspace-name').textContent=workspace?.name||'General';
+ $('workspace-emoji').textContent=workspace?.emoji||''; $('workspace-emoji').hidden=!workspace?.emoji; $('workspace-svg').toggleAttribute('hidden',!!workspace?.emoji);
+ renderWorkspaceEmojis(workspace);
  $('workspace-icon').setAttribute('href',workspace?.private?'#private':'#globe');
  $('workspace-name').title=workspace?.private?'Private: pages, history, and tabs here are not saved':'';
- $('profile-current').textContent=workspace?.name||'General';
+ $('profile-current').textContent=(workspace?.emoji?workspace.emoji+' ':'')+(workspace?.name||'General');
  $('rename-workspace').disabled=!!workspace?.private;
  $('delete-workspace').disabled=!!workspace?.private||state.workspaces.filter(w=>!w.private).length<2;
  if(previous.active_workspace_id!==state.active_workspace_id)resetWorkspaceEditor();
@@ -312,7 +315,7 @@ window.updateState = state => {
  if($('spaces').dataset.signature!==spacesSignature) {
   $('spaces').dataset.signature=spacesSignature;
   $('spaces').replaceChildren();
-  for(const [index,space] of state.workspaces.entries()) { const button=document.createElement('button'); button.className='space'; button.dataset.spaceId=space.id; button.title=space.name+(index<9?` (Alt+${index+1})`:''); button.setAttribute('aria-label',space.name); button.textContent=space.name; button.onclick=()=>Veluno.send('switch_workspace',{id:space.id}); $('spaces').append(button); }
+  for(const [index,space] of state.workspaces.entries()) { const button=document.createElement('button'); button.className='space'; button.dataset.spaceId=space.id; button.title=space.name+(index<9?` (Alt+${index+1})`:''); button.setAttribute('aria-label',space.name); button.textContent=(space.emoji?space.emoji+' ':'')+space.name; button.onclick=()=>Veluno.send('switch_workspace',{id:space.id}); $('spaces').append(button); }
  }
  for(const button of $('spaces').children) button.setAttribute('aria-pressed',String(Number(button.dataset.spaceId)===state.active_workspace_id));
  renderTabs();
@@ -487,6 +490,20 @@ $('btn-check-update').onclick=()=>Veluno.send('check_updates');
 $('btn-apply-update').onclick=()=>{ Veluno.send('apply_update'); $('btn-apply-update').disabled=true; $('btn-apply-update').textContent='Updating…'; };
 document.querySelectorAll('.app-menu [data-action]').forEach(button=>button.onclick=()=>Veluno.send(button.dataset.action,button.dataset.delta===undefined?{}:{delta:Number(button.dataset.delta)}));
 const menus=[$('app-menu'),$('browser-menu'),$('profiles')];
+const workspaceEmojis=['\u{1F3E0}','\u{1F4BC}','\u{1F4DA}','\u{1F3AE}','\u{1F3B5}','\u{1F6D2}','\u{2708}\u{FE0F}','\u{1F4A1}','\u{1F9EA}','\u{1F3A8}','\u{1F4F0}','\u{2B50}'];
+function renderWorkspaceEmojis(workspace) {
+ const row=$('workspace-emojis'); row.hidden=!workspace||workspace.private;
+ if(row.hidden) return;
+ const signature=workspace.id+':'+(workspace.emoji||'');
+ if(row.dataset.signature===signature) return;
+ row.dataset.signature=signature;
+ row.replaceChildren(...['',...workspaceEmojis].map(emoji=>{
+  const button=document.createElement('button'); button.type='button'; button.textContent=emoji||'\u2205';
+  const label=emoji?'Use '+emoji+' as the workspace icon':'No workspace icon'; button.title=label; button.setAttribute('aria-label',label);
+  button.setAttribute('aria-pressed',String((workspace.emoji||'')===emoji));
+  button.onclick=()=>Veluno.send('set_workspace_emoji',{id:workspace.id,emoji}); return button;
+ }));
+}
 const tabMenu=$('tab-context-menu');
 const closeTabMenu=()=>{ if(!tabMenu.hidden) { tabMenu.hidden=true; scheduleHide(); } };
 function openTabContextMenu(tab,clientY) {

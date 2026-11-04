@@ -94,6 +94,10 @@ pub enum Command {
         id: usize,
         destination: usize,
     },
+    SetWorkspaceEmoji {
+        id: usize,
+        emoji: String,
+    },
     ToggleMute {
         id: usize,
     },
@@ -285,13 +289,34 @@ fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, 
         // Keep WebView2 at full width so revealing it never resizes its surface.
         (right - full, full)
     };
-    let top_left = if state.sidebar_collapsed { 0. } else { full };
+    let right = settings::sidebar_right();
+    // The right-hand layout mirrors the left one horizontally.
+    let side_x = if right {
+        size.width - side_x - side_width
+    } else {
+        side_x
+    };
+    let top_left = if state.sidebar_collapsed || right {
+        0.
+    } else {
+        full
+    };
+    let top_width = if right && !state.sidebar_collapsed {
+        size.width - full
+    } else {
+        size.width - top_left
+    };
     let margin = if window.is_maximized() || window.fullscreen().is_some() {
         0.
     } else {
         ui::WINDOW_MARGIN
     };
-    let content_left = if state.sidebar_collapsed {
+    let content_left = if state.sidebar_collapsed || right {
+        margin
+    } else {
+        full + margin
+    };
+    let content_right = if state.sidebar_collapsed || !right {
         margin
     } else {
         full + margin
@@ -305,7 +330,7 @@ fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, 
         Rect {
             position: Position::Logical(LogicalPosition::new(content_left, margin)),
             size: Size::Logical(LogicalSize::new(
-                (size.width - content_left - margin).max(10.),
+                (size.width - content_left - content_right).max(10.),
                 (size.height - margin * 2.).max(10.),
             )),
         },
@@ -315,10 +340,7 @@ fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, 
         },
         Rect {
             position: Position::Logical(LogicalPosition::new(top_left, 0.)),
-            size: Size::Logical(LogicalSize::new(
-                (size.width - top_left).max(10.),
-                top_height,
-            )),
+            size: Size::Logical(LogicalSize::new(top_width.max(10.), top_height)),
         },
     )
 }
@@ -1363,7 +1385,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         | Command::TogglePin { .. } | Command::CycleTab { .. } | Command::FocusAddress
                         | Command::OpenSettings { .. } | Command::OpenHistory | Command::ImportBookmarks { .. } | Command::DuplicateTab { .. }
                         | Command::MoveTabToWorkspace { .. } | Command::ExpandPopup { .. }
-                        | Command::ReorderTab { .. } | Command::RenameWorkspace { .. } | Command::DeleteWorkspace { .. } | Command::ToggleMute { .. }
+                        | Command::ReorderTab { .. } | Command::RenameWorkspace { .. } | Command::SetWorkspaceEmoji { .. } | Command::DeleteWorkspace { .. } | Command::ToggleMute { .. }
                         | Command::DismissUpdate { .. }
                         | Command::ToggleBookmark { .. } | Command::NewPrivateTab
                         | Command::SplitTab { .. } | Command::Unsplit));
@@ -1704,6 +1726,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::RenameWorkspace { id, name } => {
                                 if let Err(error) = state.rename_workspace(id, &name) { state.update_status = Some(error); }
                             },
+                            Command::SetWorkspaceEmoji { id, emoji } => {
+                                if let Err(error) = state.set_workspace_emoji(id, &emoji) { state.update_status = Some(error); }
+                            },
                             Command::DeleteWorkspace { id, destination } => {
                                 if let Err(error) = state.delete_workspace(id, destination) { state.update_status = Some(error); }
                             },
@@ -1762,6 +1787,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                         for tab in state.tabs.iter().filter(|tab| profile::is_internal(&tab.url)) {
                                             if let Some(view) = views.get(&tab.id) { let _ = view.evaluate_script(&script); }
                                         }
+                                    } else if key == "sidebar_right" {
+                                        let _ = sidebar.evaluate_script(&format!("document.body.classList.toggle('right',{})", current.sidebar_right));
                                     } else if key == "search_engine" {
                                         let script = ui::search_script();
                                         let _ = sidebar.evaluate_script(&script);
