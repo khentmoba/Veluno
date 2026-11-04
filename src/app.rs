@@ -1472,7 +1472,19 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::NewTab { url: Some(url) } | Command::SubmitNewTab { url } => if profile::allowed_url(&url) { state.add_tab(Some(url), false); palette_open = false; },
                             Command::DismissNewTab => { palette_open = false; if !headless && let Some(view) = views.get(&state.active_tab_id) { let _ = view.focus(); } },
                             Command::SwitchTab { id } => { state.switch_tab(id); palette_open = false; },
-                            Command::CloseTab { id } => { if downloads.get(&id).copied().unwrap_or(0) == 0 { state.close_tab(id); } else { state.update_status = Some("This tab has an active download. Finish or cancel it in Downloads before closing.".into()); } },
+                            Command::CloseTab { id } => {
+                                if downloads.get(&id).copied().unwrap_or(0) == 0 {
+                                    if state.close_tab(id).is_none() && state.tabs.is_empty() {
+                                        if may_exit(&state, &session) {
+                                            *flow = ControlFlow::Exit;
+                                            return;
+                                        }
+                                        state.add_tab(None, false);
+                                    }
+                                } else {
+                                    state.update_status = Some("This tab has an active download. Finish or cancel it in Downloads before closing.".into());
+                                }
+                            },
                             Command::CloseActiveTab => { let _ = proxy.send_event(UserEvent::Command(Command::CloseTab { id: state.active_tab_id })); },
                             Command::ToggleSleep { id } => { if downloads.get(&id).copied().unwrap_or(0) == 0 { state.toggle_sleep(id); } },
                             Command::SleepInactiveTabs => { state.sleep_inactive_tabs(); for tab in &mut state.tabs { if downloads.get(&tab.id).copied().unwrap_or(0) > 0 { tab.is_sleeping = false; } } },

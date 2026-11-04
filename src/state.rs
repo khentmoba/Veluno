@@ -243,7 +243,8 @@ impl BrowserState {
                 && ids.insert(tab.id)
         });
         if state.tabs.is_empty() {
-            return None;
+            state.active_workspace_id = state.workspaces.first().map_or(1, |w| w.id);
+            state.add_tab(None, false);
         }
         for tab in &mut state.tabs {
             tab.is_loading = false;
@@ -351,8 +352,7 @@ impl BrowserState {
         self.can_restore_closed_tab = true;
 
         if self.tabs.is_empty() {
-            let new_id = self.add_tab(None, false);
-            return Some(new_id);
+            return None;
         }
 
         if self.active_tab_id == tab_id {
@@ -589,7 +589,11 @@ impl BrowserState {
     /// The state to write to disk: everything except the Private profile.
     pub fn for_session(&self) -> std::borrow::Cow<'_, Self> {
         let private = self.private_workspace();
-        if private.is_none() && self.download_items.is_empty() && !self.downloads_open {
+        if private.is_none()
+            && self.download_items.is_empty()
+            && !self.downloads_open
+            && !self.tabs.is_empty()
+        {
             return std::borrow::Cow::Borrowed(self);
         }
         let mut state = self.clone();
@@ -1414,21 +1418,34 @@ mod tests {
     }
 
     #[test]
-    fn closing_last_tab_creates_a_recoverable_new_tab() {
+    fn closing_last_tab_leaves_tabs_empty_and_allows_restoring_closed_tab() {
         let mut state = BrowserState::new();
-        state.close_tab(1);
-        assert_eq!(state.tabs.len(), 1);
-        assert_eq!(state.active_tab().unwrap().url, "veluno://blank");
-        let mut restored =
-            BrowserState::from_session(&serde_json::to_string(&state).unwrap()).unwrap();
+        assert_eq!(state.close_tab(1), None);
+        assert!(state.tabs.is_empty());
+        assert!(state.can_restore_closed_tab);
+        assert_eq!(state.close_tab(999), None);
+        assert!(state.tabs.is_empty());
+
+        let saved = serde_json::to_string(&*state.for_session()).unwrap();
+        let mut restored = BrowserState::from_session(&saved).unwrap();
         assert!(restored.welcome_dismissed);
         assert_eq!(restored.homepage, "veluno://blank");
-        restored.add_tab(None, false);
+        assert_eq!(restored.tabs.len(), 1);
         assert_eq!(restored.active_tab().unwrap().url, "veluno://blank");
-        assert!(state.can_restore_closed_tab);
-        state.restore_closed_tab();
+        assert!(restored.can_restore_closed_tab);
+
+        restored.restore_closed_tab().unwrap();
+        assert_eq!(restored.tabs.len(), 2);
+    }
+
+    #[test]
+    fn closing_tab_with_surviving_tabs_switches_active_tab() {
+        let mut state = BrowserState::new();
+        let second = state.add_tab(Some("https://example.com".into()), false);
         assert_eq!(state.tabs.len(), 2);
-        assert!(!state.can_restore_closed_tab);
+        assert_eq!(state.close_tab(second), Some(1));
+        assert_eq!(state.tabs.len(), 1);
+        assert_eq!(state.active_tab_id, 1);
     }
 
     #[test]
