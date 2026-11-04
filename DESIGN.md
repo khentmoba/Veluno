@@ -57,6 +57,10 @@ Status and undo feedback share one compact area. Routine download completion, cl
 
 A download-only navigation with no committed document removes its unpinned empty tab and selects its surviving opener within the same workspace. The native download owner stays hidden until the transfer can be released; active/resumable owners and at most one completed owner remain available to Downloads. Existing documents, including Home, stay open and recover their committed address after a download navigation. Automatic cleanup never creates a recently closed tab or an Undo message.
 
+## Glance
+
+Alt+Click on an http(s) link previews it in the popup window instead of navigating or downloading it (Chromium's default for Alt+Click). The page script reports the link with the tab's per-process token, so ordinary page scripts cannot open previews. Glance sizes the window to about 82% × 86% of the browser and centers it there. Its WebView uses the tab profile and environment options, so sign-ins carry over; previews from private tabs are InPrivate. The bar shows the read-only address, Open as tab, and Close. Escape or Ctrl+W in the preview, the close button, the window's own close, or reactivating the main window dismiss it, unless the page already handled the key. Sign-in auto-promotion applies only to page-opened popups, never to Glance. The popup is a separate owned window rather than an overlay over the content WebView. Native child WebViews cannot be layered with a scrim the way Zen does it.
+
 ## Motion
 
 The focal interaction is the floating search palette: each invocation resolves into focus over a dimmed page in 280ms, and exits in 100ms before the native overlay hides. The scrim animates opacity on its own noninteractive layer; the panel uses transform and opacity without animated blur. Dismissal starts at the current scrim opacity, including during an interrupted entrance. A new invocation continues from the visible panel and scrim state, and cancels a pending exit so stale dismiss/submit IPC cannot fire. Reduced-motion mode skips these spatial effects and never delays submission or cancellation.

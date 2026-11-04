@@ -94,4 +94,42 @@ export async function checkBrowserControls(sidebar, command, origin, port, artif
   assert.equal(await sidebar.evaluate(`currentState.tabs.find(t=>t.id===${a}).is_muted`),true,'native mute is reapplied before loading a recreated page');
   await awakened.evaluate('recreatedTone.stop();recreatedAudio.close();true');
   console.log('Native tab ordering, workspace rename/delete with live draft retention, audio/mute events, and origin-scoped cookie/storage clearing passed.');
+  await checkGlance(sidebar, awakened, origin, port, artifacts);
+}
+
+async function targets(port) {
+  return (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+}
+
+async function checkGlance(sidebar, page, origin, port, artifacts) {
+  const glanceUrl = origin + '/glance-target';
+  const tabsBefore = await sidebar.evaluate('currentState.tabs.length');
+  const activeBefore = await sidebar.evaluate('currentState.active_tab_id');
+  const altClick = async () => {
+    const { x, y } = await page.evaluate(`(() => {
+      document.getElementById('glance-link')?.remove();
+      document.body.insertAdjacentHTML('afterbegin','<a id="glance-link" href="/glance-target" style="display:block;padding:20px">Glance</a>');
+      const rect = document.getElementById('glance-link').getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    })()`);
+    for (const type of ['mousePressed', 'mouseReleased']) await page.call('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1, modifiers: 1 });
+  };
+  await altClick();
+  const glance = await connect(target => target.url === glanceUrl, port);
+  await until(() => glance.evaluate('document.readyState==="complete"'), 'Glance preview loads');
+  assert.equal(await page.evaluate('location.pathname'), '/controls-a', 'Alt+Click leaves the current tab in place');
+  assert.equal(await sidebar.evaluate('currentState.tabs.length'), tabsBefore, 'Glance does not create a tab');
+  assert.equal(await sidebar.evaluate('currentState.active_tab_id'), activeBefore);
+  if (artifacts) {
+    const screenshot = await glance.call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(artifacts, 'glance.png'), Buffer.from(screenshot.data, 'base64'));
+  }
+  for (const type of ['keyDown', 'keyUp']) await glance.call('Input.dispatchKeyEvent', { type, key: 'Escape', windowsVirtualKeyCode: 27 }, { allowTargetClose: true });
+  await until(async () => !(await targets(port)).some(target => target.url === glanceUrl), 'Escape closes Glance');
+  await altClick();
+  await connect(target => target.url === glanceUrl, port);
+  await sidebar.evaluate(`window.ipc.postMessage(JSON.stringify({action:'expand_popup',url:${JSON.stringify(glanceUrl)}}));true`);
+  await until(() => sidebar.evaluate(`currentState.tabs.some(t=>t.url===${JSON.stringify(glanceUrl)}&&t.id===currentState.active_tab_id)`), 'Open as tab promotes Glance');
+  assert.equal(await sidebar.evaluate('currentState.tabs.length'), tabsBefore + 1);
+  console.log('Glance: Alt+Click previews a link without leaving the tab, Escape dismisses it, and Open as tab promotes it.');
 }

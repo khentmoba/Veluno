@@ -114,6 +114,10 @@ pub enum Command {
     ExpandPopup {
         url: String,
     },
+    ClosePopup,
+    Glance {
+        url: String,
+    },
     CheckUpdates,
     ApplyUpdate,
     DismissUpdate {
@@ -337,6 +341,8 @@ struct PopupHost {
     view: Rc<RefCell<Option<WebView>>>,
     url: Rc<RefCell<String>>,
     auth_seen: Rc<Cell<bool>>,
+    /// The window holds a Glance link preview rather than a page-opened popup.
+    glance: Rc<Cell<bool>>,
     headless: bool,
 }
 
@@ -428,6 +434,7 @@ fn open_popup(
         host.window.set_outer_position(LogicalPosition::new(x, y));
     }
     host.window.set_title("Sign in — Veluno");
+    host.glance.set(false);
     if !host.headless {
         host.window.set_minimized(false);
         host.window.set_visible(true);
@@ -477,6 +484,98 @@ fn open_popup(
     *host.view.borrow_mut() = Some(view);
     let _ = proxy.send_event(UserEvent::PopupState(url.to_string(), true));
     Some(NewWindowResponse::Create { webview: raw })
+}
+
+/// Lets Escape or Ctrl+W inside a Glance preview dismiss it, unless the page handles the key.
+const GLANCE_SCRIPT: &str = r#"addEventListener('keydown',e=>{if(!e.isTrusted||e.defaultPrevented||e.isComposing||window.top!==window)return;const k=e.key.toLowerCase(),plain=!e.ctrlKey&&!e.altKey&&!e.shiftKey&&!e.metaKey;if((plain&&k==='escape')||(e.ctrlKey&&!e.altKey&&!e.shiftKey&&k==='w')){e.preventDefault();window.ipc?.postMessage('{"action":"close_popup"}');}},true);"#;
+
+/// Opens a link preview in the popup window, centered over the browser and sharing the tab profile.
+fn open_glance(
+    host: &PopupHost,
+    context: &mut WebContext,
+    url: &str,
+    private: bool,
+    proxy: &EventLoopProxy<UserEvent>,
+) -> wry::Result<()> {
+    *host.view.borrow_mut() = None;
+    let scale = host.main.scale_factor();
+    let main_size = host.main.inner_size().to_logical::<f64>(scale);
+    let size = LogicalSize::new(
+        (main_size.width * 0.82).max(360.),
+        (main_size.height * 0.86).max(420.),
+    );
+    host.window.set_inner_size(size);
+    if let Ok(outer) = host.main.outer_position() {
+        let main_pos = outer.to_logical::<f64>(scale);
+        host.window.set_outer_position(LogicalPosition::new(
+            main_pos.x + (main_size.width - size.width) * 0.5,
+            main_pos.y + (main_size.height - size.height) * 0.5,
+        ));
+    }
+    host.window.set_title("Glance — Veluno");
+    host.glance.set(true);
+    host.auth_seen.set(false);
+    *host.url.borrow_mut() = url.to_string();
+    if !host.headless {
+        host.window.set_minimized(false);
+        host.window.set_visible(true);
+        host.window.set_focus();
+    }
+    let title_proxy = proxy.clone();
+    let nav_proxy = proxy.clone();
+    let tab_proxy = proxy.clone();
+    let ipc_proxy = proxy.clone();
+    let mut builder = WebViewBuilder::new_with_web_context(context)
+        .with_incognito(private)
+        .with_bounds(popup_bounds(&host.window).1)
+        .with_focused(!host.headless)
+        .with_clipboard(true)
+        .with_initialization_script(GLANCE_SCRIPT)
+        .with_document_title_changed_handler(move |text| {
+            let _ = title_proxy.send_event(UserEvent::PopupTitle(text));
+        })
+        .with_navigation_handler(move |target| {
+            let allowed = profile::allowed_url(&target)
+                || target == "about:blank"
+                || target.starts_with("data:text/html;");
+            if !allowed {
+                let _ = nav_proxy.send_event(UserEvent::Status(
+                    "This link uses an unsupported application protocol.".into(),
+                ));
+            }
+            allowed
+        })
+        .with_new_window_req_handler(move |target, _| {
+            if profile::allowed_url(&target) {
+                let _ =
+                    tab_proxy.send_event(UserEvent::Command(Command::NewTab { url: Some(target) }));
+            }
+            NewWindowResponse::Deny
+        })
+        .with_ipc_handler(move |request| {
+            if let Ok(Command::ClosePopup) = serde_json::from_str::<Command>(request.body()) {
+                let _ = ipc_proxy.send_event(UserEvent::Command(Command::ClosePopup));
+            }
+        });
+    // WebView2 rejects a second view on the tab profile unless its environment options match.
+    #[cfg(windows)]
+    {
+        use wry::WebViewBuilderExtWindows;
+        if host.headless
+            && let Ok(arguments) = std::env::var("VELUNO_SMOKE_CONTENT_BROWSER_ARGUMENTS")
+        {
+            builder = builder.with_additional_browser_args(arguments);
+        }
+        if extensions::enabled_at_startup() {
+            builder = builder.with_browser_extensions_enabled(true);
+        }
+    }
+    let view = builder.with_url(url).build_as_child(&*host.window)?;
+    let _ = desktop::attach_popup(&view, proxy.clone());
+    let _ = desktop::apply_privacy(&view, &settings::get());
+    *host.view.borrow_mut() = Some(view);
+    let _ = proxy.send_event(UserEvent::PopupState(url.to_string(), true));
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -629,6 +728,7 @@ fn content(
                                 | Command::NewPrivateTab
                                 | Command::ToggleReader
                                 | Command::OpenSettings { .. }
+                                | Command::Glance { .. }
                         ))
                 {
                     let _ = ipc.send_event(UserEvent::Command(message.command));
@@ -927,6 +1027,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         view: Rc::new(RefCell::new(None)),
         url: Rc::new(RefCell::new(String::new())),
         auth_seen: Rc::new(Cell::new(false)),
+        glance: Rc::new(Cell::new(false)),
         headless,
     };
     let mut state = BrowserState::restore();
@@ -1055,7 +1156,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         })
         .with_ipc_handler(move |request| {
-            if let Ok(command @ Command::ExpandPopup { .. }) =
+            if let Ok(command @ (Command::ExpandPopup { .. } | Command::ClosePopup)) =
                 serde_json::from_str::<Command>(request.body())
             {
                 let _ = popup_bar_proxy.send_event(UserEvent::Command(command));
@@ -1166,6 +1267,10 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         let tick = matches!(event, Event::UserEvent(UserEvent::Frame));
         match event {
             Event::WindowEvent { window_id, event: WindowEvent::Focused(true), .. } if window_id == window.id() => {
+                // Returning to the browser dismisses a Glance preview, like clicking outside it.
+                if popup_host.glance.get() && popup_host.view.borrow().is_some() {
+                    let _ = proxy.send_event(UserEvent::Command(Command::ClosePopup));
+                }
                 state.is_default_browser = desktop::is_default_browser();
                 for tab in state.tabs.iter().filter(|tab| tab.url == "veluno://settings") {
                     if let Some(view) = views.get(&tab.id) {
@@ -1400,7 +1505,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         popup_loading = loading;
                         if !url.is_empty() && url != "about:blank" {
                             // A sign-in flow that lands on a normal page instead of closing belongs in the main window.
-                            if profile::is_auth_url(&url) {
+                            if popup_host.glance.get() {
+                                // Glance previews stay put until the user opens them as a tab.
+                            } else if profile::is_auth_url(&url) {
                                 popup_host.auth_seen.set(true);
                             } else if !loading && popup_host.auth_seen.get() && popup_host.view.borrow().is_some() {
                                 let _ = proxy.send_event(UserEvent::Command(Command::ExpandPopup { url: url.clone() }));
@@ -1530,6 +1637,21 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 if !headless {
                                     window.set_minimized(false);
                                     window.set_focus();
+                                }
+                            },
+                            Command::ClosePopup => {
+                                *popup_host.view.borrow_mut() = None;
+                                popup_host.window.set_visible(false);
+                                if !headless {
+                                    window.set_focus();
+                                    if let Some(view) = views.get(&state.active_tab_id) { let _ = view.focus(); }
+                                }
+                            },
+                            Command::Glance { url } => if profile::allowed_url(&url) && !profile::is_internal(&url) {
+                                let private = state.is_private(state.active_tab_id);
+                                if let Err(error) = open_glance(&popup_host, &mut context, &url, private, &proxy) {
+                                    popup_host.window.set_visible(false);
+                                    state.update_status = Some(format!("Could not open Glance: {error}"));
                                 }
                             },
                             Command::SwitchProfile { index } => {

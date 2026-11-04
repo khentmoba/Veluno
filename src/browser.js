@@ -137,6 +137,19 @@
       postShortcut?.(stringify({ __proto__: null, action, ...payload, shortcut_token: '__SHORTCUT_TOKEN__' }));
     }
   }, true);
+  // Glance: Alt+Click previews a link in a floating window instead of navigating or downloading.
+  window.addEventListener('click', event => {
+    if (!event.isTrusted || event.defaultPrevented || event.button !== 0 || !event.altKey
+      || event.ctrlKey || event.shiftKey || event.metaKey) return;
+    const link = event.target?.closest?.('a[href]');
+    if (!link) return;
+    let url;
+    try { url = new URL(link.href, location.href); } catch { return; }
+    if (!['http:', 'https:'].includes(url.protocol)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    postShortcut?.(stringify({ __proto__: null, action: 'glance', url: url.href, shortcut_token: '__SHORTCUT_TOKEN__' }));
+  }, true);
   let resourceFailureReported = false;
   window.addEventListener('error', event => {
     if (resourceFailureReported || !event.isTrusted || window.top !== window
