@@ -56,6 +56,7 @@ try {
     assert.equal(await sidebar.evaluate(`currentState.closed_tabs.some(t=>t.url==='${origin}/slow-download')`), false, 'download should not be reopened by Undo');
     await command('open_downloads');
     await until(()=>sidebar.evaluate('currentState.download_items?.some(item=>item.status==="downloading"&&item.received>0&&item.received<item.total)'), 'partial byte progress delivered');
+    assert.match(await sidebar.evaluate('document.getElementById("download-items").textContent'), /Downloading.*MB/);
     if (artifacts) {
       const shot = await sidebar.call('Page.captureScreenshot', { format: 'png' });
       await writeFile(join(artifacts, 'download-progress.png'), Buffer.from(shot.data, 'base64'));
@@ -67,7 +68,8 @@ try {
     assert.equal((await readFile(join(artifacts, 'profile', 'smoke-download.txt'))).length, 65536, 'complete download contents');
     await command('open_downloads');
     await until(()=>sidebar.evaluate('currentState.download_items?.some(item=>item.status==="complete"&&item.received===65536)'), 'completed file retained with byte count');
-    assert.match(await sidebar.evaluate('document.getElementById("download-items").textContent'), /Complete.*64.0 KB.*Show in folder/);
+    assert.match(await sidebar.evaluate('document.getElementById("download-items").textContent'), /Complete.*0\.1 MB.*Show in folder/);
+    assert.equal(await sidebar.evaluate('document.querySelector("#download-items progress")'), null, 'no progress bar after completion');
     await command('close_downloads');
     await until(()=>sidebar.evaluate('document.getElementById("downloads-panel").hidden'),'panel closed');
     await command('open_downloads');
@@ -126,6 +128,15 @@ try {
       await writeFile(join(artifacts, 'download-tab-after.png'), Buffer.from(shot.data, 'base64'));
     }
     console.log('Download-only tabs disappear without cancelling transfers; the source draft, address, and completed download access survive.');
+    await command('new_tab', { url: origin + '/download-source' });
+    await until(() => sidebar.evaluate('currentState.tabs.some(t=>t.url.includes("/download-source")&&!t.is_loading)'), 'test tab loaded');
+    const testTabId = await sidebar.evaluate('currentState.active_tab_id');
+    const testSource = await connect(page => page.url === origin + '/download-source', contentPort);
+    await testSource.evaluate(`document.getElementById('download').href='${origin}/download';document.getElementById('download').click();true`);
+    await until(() => sidebar.evaluate('currentState.active_downloads===0'), 'download finished');
+    await command('close_tab', { id: testTabId });
+    await until(() => sidebar.evaluate(`!currentState.tabs.some(t=>t.id===${testTabId})`), 'tab with finished download closed without active download block');
+    assert.equal(await sidebar.evaluate('currentState.update_status?.includes("active download")'), false, 'finished download allows tab closure');
   }
 } catch (error) {
   if (artifacts) {
