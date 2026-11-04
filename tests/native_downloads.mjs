@@ -70,7 +70,7 @@ try {
     await until(()=>sidebar.evaluate('currentState.download_items?.some(item=>item.status==="complete"&&item.received===65536)'), 'completed file retained with byte count');
     assert.match(await sidebar.evaluate('document.getElementById("download-items").textContent'), /Complete.*0\.1 MB.*Show in folder/);
     assert.equal(await sidebar.evaluate('document.querySelector("#download-items progress")'), null, 'no progress bar after completion');
-    assert.equal(await sidebar.evaluate('document.querySelectorAll(".download-actions button").length'), 2, 'both Open and Show in folder buttons present');
+    assert.equal(await sidebar.evaluate('document.querySelector(".download-actions")?.children.length'), 2, 'both Open and Show in folder buttons present');
     await command('toggle_downloads');
     await until(()=>sidebar.evaluate('document.getElementById("downloads-panel").hidden'), 'panel toggles closed');
     await command('toggle_downloads');
