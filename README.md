@@ -93,6 +93,8 @@ The sidebar has no fixed shortcut-tile dock. Search opens/closes with short, int
 
 Web searches use **Brave Search** by default (Settings can switch to DuckDuckGo, Google, or Bing) throughout the sidebar, Home page, and floating search bar. Suggestions come from your local open tabs, bookmarks, history, and shortcuts; no remote autocomplete requests are sent while typing. Strong site or title matches appear before web search and are selected when you press Enter. Ordinary queries and weak matches keep web search first, and an explicit web search choice is always available.
 
+**Search keywords:** start an address with `@yt`, `@gh`, `@w` (Wikipedia), `@r` (Reddit), `@maps`, `@g`, `@b`, `@ddg`, or `@brave` to search that site directly, for example `@yt lofi beats`. A keyword on its own opens the site.
+
 Shortcuts work while browser chrome or page content has focus. In pages they are caught natively before the page sees the key, so sites and focused iframes can't swallow them; `Ctrl + S`, `Ctrl + F`, and other keys not listed stay with the page. Right-clicking any tab in the sidebar opens quick actions to pin/unpin, duplicate, sleep/wake, move to another workspace, or close it. The bottom sidebar menu contains pin/unpin, reopen, and close-other-tabs actions. Close Others keeps pinned tabs, affects only the current workspace, and can be undone one tab at a time with Reopen.
 
 **Workspaces organize tabs, not accounts:** regular workspaces share cookies and website logins. Create, rename, or delete them from the bottom workspace picker. Deletion moves open tabs, pins, and recently closed tabs to the regular workspace you choose, without reloading live pages. Private remains separate and is never saved.

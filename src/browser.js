@@ -3,9 +3,30 @@
   function send(action, payload = {}) {
     window.ipc?.postMessage(JSON.stringify({ action, ...payload }));
   }
+  // Search keywords: '@yt cats' searches YouTube; a bare '@yt' opens the site.
+  const keywords = {
+    yt: ['YouTube', 'https://www.youtube.com/results?search_query=', 'https://www.youtube.com/'],
+    gh: ['GitHub', 'https://github.com/search?q=', 'https://github.com/'],
+    w: ['Wikipedia', 'https://en.wikipedia.org/w/index.php?search=', 'https://en.wikipedia.org/'],
+    r: ['Reddit', 'https://www.reddit.com/search/?q=', 'https://www.reddit.com/'],
+    maps: ['Maps', 'https://www.openstreetmap.org/search?query=', 'https://www.openstreetmap.org/'],
+    g: ['Google', 'https://www.google.com/search?q=', 'https://www.google.com/'],
+    b: ['Bing', 'https://www.bing.com/search?q=', 'https://www.bing.com/'],
+    ddg: ['DuckDuckGo', 'https://duckduckgo.com/?q=', 'https://duckduckgo.com/'],
+    brave: ['Brave Search', 'https://search.brave.com/search?q=', 'https://search.brave.com/'],
+  };
+  function keyword(value) {
+    const match = /^@([a-z]+)(?:\s+([\s\S]*))?$/i.exec(value.trim());
+    const entry = match && Object.hasOwn(keywords, match[1].toLowerCase()) && keywords[match[1].toLowerCase()];
+    if (!entry) return null;
+    const query = (match[2] || '').trim();
+    return { name: entry[0], query, url: query ? entry[1] + encodeURIComponent(query) : entry[2] };
+  }
   function resolveAddress(value) {
     const text = value.trim();
     if (!text) return null;
+    const shortcut = keyword(text);
+    if (shortcut) return shortcut.url;
     const internal=text.startsWith('felaris://')?'veluno://'+text.slice(10):text;
     if (['veluno://newtab','veluno://blank','veluno://settings','veluno://history'].includes(internal)) return internal;
     if (/^(https?:\/\/|file:\/\/)/i.test(text)) return text;
@@ -77,7 +98,11 @@
      return score===maxScore&&complete();
     }
     let fallback;
-    if(target) {
+    const shortcut=keyword(query);
+    if(shortcut) {
+     fallback={option:{title:shortcut.query||shortcut.name,detail:shortcut.query?'Search '+shortcut.name:'Open '+shortcut.name,url:target,search:!!shortcut.query},score:120};
+     seen.add(norm(target));
+    } else if(target) {
      const search=target===Veluno.searchUrl+encodeURIComponent(query);
      fallback={option:{title:query,detail:search?'Search with '+Veluno.searchName.replace(/ Search$/,''):'Open in a new tab',url:target,search},score:search?60:110};
      seen.add(norm(target));
@@ -97,7 +122,7 @@
     if(fallback) options.push(fallback);
     return options.sort((a,b)=>b.score-a.score).map(item=>item.option);
   }
-  window.Veluno = { send, resolveAddress, suggestions, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
+  window.Veluno = { send, resolveAddress, suggestions, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
   const postShortcut = window.ipc?.postMessage.bind(window.ipc);
   const stringify = JSON.stringify;
   window.addEventListener('keydown', event => {
