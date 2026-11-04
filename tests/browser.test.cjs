@@ -3,8 +3,9 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const messages = [];
 let keydown;
+let click;
 let resourceError;
-const window = { ipc: { postMessage: json => messages.push(JSON.parse(json)) }, addEventListener: (type, handler) => { if (type === 'keydown') keydown = handler; else if (type === 'error') resourceError = handler; } };
+const window = { ipc: { postMessage: json => messages.push(JSON.parse(json)) }, addEventListener: (type, handler) => { if (type === 'keydown') keydown = handler; else if (type === 'click') click = handler; else if (type === 'error') resourceError = handler; } };
 window.top = window;
 const navigator = { serviceWorker: { controller: {} } };
 const location = { href: 'https://example.com/meeting', origin: 'https://example.com' };
@@ -22,6 +23,14 @@ for (const [input, expected] of [
   ['rust & café #東京', 'https://search.brave.com/search?q=rust%20%26%20caf%C3%A9%20%23%E6%9D%B1%E4%BA%AC'],
   ['javascript:alert(1)', 'https://search.brave.com/search?q=javascript%3Aalert(1)'],
 ]) assert.equal(resolve(input), expected, input);
+for (const [input, expected] of [
+  ['@yt lofi beats', 'https://www.youtube.com/results?search_query=lofi%20beats'],
+  ['@GH  veluno ', 'https://github.com/search?q=veluno'],
+  ['@w', 'https://en.wikipedia.org/'],
+  ['@nope cats', 'https://search.brave.com/search?q=%40nope%20cats'],
+  ['@constructor x', 'https://search.brave.com/search?q=%40constructor%20x'],
+  ['email@yt.com', 'https://email@yt.com'],
+]) assert.equal(resolve(input), expected, input);
 context.Veluno=window.Veluno;
 const suggest=window.Veluno.suggestions;
 const sources={tabs:[{id:1,title:'YouTube tab',url:'https://youtube.com'}],bookmarks:[{title:'Duplicate',url:'https://youtube.com/'}],shortcuts:[{title:'YouTube',url:'https://youtube.com'},{title:'GitHub',url:'https://github.com'}]};
@@ -38,6 +47,10 @@ assert.equal(suggest('youtube',{shortcuts:sources.shortcuts})[0].shortcut,true);
 assert.equal(suggest('rust async',{},[{title:'Async Rust guide',url:'https://example.com/async-rust'}])[1].history,true,'Match all words in any order');
 assert.equal(suggest('hub',rankedSources)[0].search,true,'Weak substring matches do not hijack Enter');
 assert.equal(suggest('g',rankedSources)[0].search,true,'One letter is ambiguous');
+const keywordOption=suggest('@yt cats',sources)[0];
+assert.equal(keywordOption.url,'https://www.youtube.com/results?search_query=cats','Keyword searches lead suggestions');
+assert.equal(keywordOption.detail,'Search YouTube');
+assert.equal(suggest('@gh',sources)[0].detail,'Open GitHub');
 assert.equal(suggest('x',{shortcuts:[{title:'X',url:'https://x.com'}]})[0].shortcut,true);
 assert.equal(suggest('https://github.com/new',rankedSources)[0].url,'https://github.com/new','Explicit addresses stay first');
 const crowded={tabs:Array.from({length:12},(_,i)=>({id:i+10,title:'GitHub article '+i,url:'https://example.com/'+i})),bookmarks:[{title:'GitHub',url:'https://github.com'}]};
@@ -103,6 +116,19 @@ assert.deepEqual(press('F11'), { action: 'toggle_fullscreen' });
 assert.deepEqual(press('F9'), { action: 'toggle_reader' });
 assert.deepEqual(press('Delete', { ctrlKey: true, shiftKey: true }), { action: 'open_settings', section: 'privacy' });
 keydown({ key: 'Delete', ctrlKey: true, isTrusted: true, preventDefault() { throw Error('Ctrl+Delete deletes a word in the page'); } });
+const link = href => ({ closest: selector => selector === 'a[href]' ? { href } : null });
+function altClick(href, modifiers = {}) {
+  let prevented = false;
+  click({ isTrusted: true, button: 0, altKey: true, target: link(href), ...modifiers, preventDefault() { prevented = true; }, stopPropagation() {} });
+  return prevented;
+}
+assert.ok(altClick('/docs?a=1'), 'Alt+Click on a link opens Glance instead of downloading it');
+assert.deepEqual(messages.pop(), { action: 'glance', url: 'https://example.com/docs?a=1', shortcut_token: '__SHORTCUT_TOKEN__' });
+assert.equal(altClick('mailto:a@example.com'), false, 'Only web links open in Glance');
+assert.equal(altClick('/docs', { altKey: false }), false, 'Plain clicks belong to the page');
+assert.equal(altClick('/docs', { ctrlKey: true }), false, 'Ctrl+Alt+Click is left to the page');
+assert.equal(altClick('/docs', { isTrusted: false }), false, 'Synthetic clicks cannot open Glance');
+assert.equal(messages.length, 0);
 new vm.Script(fs.readFileSync('src/reader.js', 'utf8'), { filename: 'src/reader.js' });
 vm.runInContext("Object.prototype.toJSON = function () { throw Error('page serialization hook'); }", context);
 assert.deepEqual(press('t', { ctrlKey: true }), { action: 'new_tab' });

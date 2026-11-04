@@ -94,6 +94,10 @@ pub enum Command {
         id: usize,
         destination: usize,
     },
+    SetWorkspaceEmoji {
+        id: usize,
+        emoji: String,
+    },
     ToggleMute {
         id: usize,
     },
@@ -112,6 +116,18 @@ pub enum Command {
         direction: String,
     },
     ExpandPopup {
+        url: String,
+    },
+    ClosePopup,
+    SplitTab {
+        id: usize,
+    },
+    OpenInSidePanel {
+        id: usize,
+    },
+    ToggleSidePanel,
+    Unsplit,
+    Glance {
         url: String,
     },
     CheckUpdates,
@@ -252,6 +268,7 @@ pub enum UserEvent {
     IncompleteLoad(usize, u64, String),
     Failed(usize, u64, String, String),
     Crashed(usize, u64),
+    Focused(usize, u64),
     Favicon(usize, u64, String),
     DownloadsChanged,
     DownloadStarted(usize, u64, bool, Option<String>),
@@ -276,13 +293,34 @@ fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, 
         // Keep WebView2 at full width so revealing it never resizes its surface.
         (right - full, full)
     };
-    let top_left = if state.sidebar_collapsed { 0. } else { full };
+    let right = settings::sidebar_right();
+    // The right-hand layout mirrors the left one horizontally.
+    let side_x = if right {
+        size.width - side_x - side_width
+    } else {
+        side_x
+    };
+    let top_left = if state.sidebar_collapsed || right {
+        0.
+    } else {
+        full
+    };
+    let top_width = if right && !state.sidebar_collapsed {
+        size.width - full
+    } else {
+        size.width - top_left
+    };
     let margin = if window.is_maximized() || window.fullscreen().is_some() {
         0.
     } else {
         ui::WINDOW_MARGIN
     };
-    let content_left = if state.sidebar_collapsed {
+    let content_left = if state.sidebar_collapsed || right {
+        margin
+    } else {
+        full + margin
+    };
+    let content_right = if state.sidebar_collapsed || !right {
         margin
     } else {
         full + margin
@@ -296,7 +334,7 @@ fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, 
         Rect {
             position: Position::Logical(LogicalPosition::new(content_left, margin)),
             size: Size::Logical(LogicalSize::new(
-                (size.width - content_left - margin).max(10.),
+                (size.width - content_left - content_right).max(10.),
                 (size.height - margin * 2.).max(10.),
             )),
         },
@@ -306,11 +344,92 @@ fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, 
         },
         Rect {
             position: Position::Logical(LogicalPosition::new(top_left, 0.)),
-            size: Size::Logical(LogicalSize::new(
-                (size.width - top_left).max(10.),
-                top_height,
-            )),
+            size: Size::Logical(LogicalSize::new(top_width.max(10.), top_height)),
         },
+    )
+}
+
+/// Takes the side web panel from the content edge away from the sidebar.
+fn side_panel_bounds(content: Rect, scale: f64, sidebar_right: bool) -> (Rect, Rect) {
+    let position = content.position.to_logical::<f64>(scale);
+    let size = content.size.to_logical::<f64>(scale);
+    let width = ui::SIDE_PANEL_WIDTH.min(size.width * 0.45);
+    let rest = (size.width - width - ui::WINDOW_MARGIN).max(10.);
+    let (panel_x, content_x) = if sidebar_right {
+        (position.x, position.x + width + ui::WINDOW_MARGIN)
+    } else {
+        (position.x + rest + ui::WINDOW_MARGIN, position.x)
+    };
+    let rect = |x: f64, width: f64| Rect {
+        position: Position::Logical(LogicalPosition::new(x, position.y)),
+        size: Size::Logical(LogicalSize::new(width, size.height)),
+    };
+    (rect(content_x, rest), rect(panel_x, width))
+}
+
+/// The docked side web panel. It shares the tab profile, so sign-ins carry over.
+fn side_panel(
+    window: &Window,
+    context: &mut WebContext,
+    url: &str,
+    bounds: Rect,
+    proxy: &EventLoopProxy<UserEvent>,
+) -> wry::Result<WebView> {
+    let nav_proxy = proxy.clone();
+    let tab_proxy = proxy.clone();
+    let mut builder = WebViewBuilder::new_with_web_context(context)
+        .with_bounds(bounds)
+        .with_focused(false)
+        .with_clipboard(true)
+        .with_navigation_handler(move |target| {
+            let allowed = profile::allowed_url(&target)
+                || target == "about:blank"
+                || target.starts_with("data:text/html;");
+            if !allowed {
+                let _ = nav_proxy.send_event(UserEvent::Status(
+                    "This link uses an unsupported application protocol.".into(),
+                ));
+            }
+            allowed
+        })
+        .with_new_window_req_handler(move |target, _| {
+            if profile::allowed_url(&target) {
+                let _ =
+                    tab_proxy.send_event(UserEvent::Command(Command::NewTab { url: Some(target) }));
+            }
+            NewWindowResponse::Deny
+        });
+    // Match the tab profile's environment options, as Glance does.
+    #[cfg(windows)]
+    {
+        use wry::WebViewBuilderExtWindows;
+        if std::env::var_os("VELUNO_SMOKE_TEST").is_some()
+            && let Ok(arguments) = std::env::var("VELUNO_SMOKE_CONTENT_BROWSER_ARGUMENTS")
+        {
+            builder = builder.with_additional_browser_args(arguments);
+        }
+        if extensions::enabled_at_startup() {
+            builder = builder.with_browser_extensions_enabled(true);
+        }
+    }
+    let view = builder.with_url(url).build_as_child(window)?;
+    desktop::block_view_ads(&view);
+    let _ = desktop::apply_privacy(&view, &settings::get());
+    Ok(view)
+}
+
+/// Splits the content area into two side-by-side panes with a window-margin gap.
+fn split_bounds(content: Rect, scale: f64) -> (Rect, Rect) {
+    let position = content.position.to_logical::<f64>(scale);
+    let size = content.size.to_logical::<f64>(scale);
+    let width = ((size.width - ui::WINDOW_MARGIN) / 2.).max(10.);
+    let pane = |x: f64| Rect {
+        position: Position::Logical(LogicalPosition::new(x, position.y)),
+        size: Size::Logical(LogicalSize::new(width, size.height)),
+    };
+    (
+        pane(position.x),
+        pane(position.x + width + ui::WINDOW_MARGIN),
     )
 }
 
@@ -337,6 +456,8 @@ struct PopupHost {
     view: Rc<RefCell<Option<WebView>>>,
     url: Rc<RefCell<String>>,
     auth_seen: Rc<Cell<bool>>,
+    /// The window holds a Glance link preview rather than a page-opened popup.
+    glance: Rc<Cell<bool>>,
     headless: bool,
 }
 
@@ -428,6 +549,7 @@ fn open_popup(
         host.window.set_outer_position(LogicalPosition::new(x, y));
     }
     host.window.set_title("Sign in — Veluno");
+    host.glance.set(false);
     if !host.headless {
         host.window.set_minimized(false);
         host.window.set_visible(true);
@@ -477,6 +599,98 @@ fn open_popup(
     *host.view.borrow_mut() = Some(view);
     let _ = proxy.send_event(UserEvent::PopupState(url.to_string(), true));
     Some(NewWindowResponse::Create { webview: raw })
+}
+
+/// Lets Escape or Ctrl+W inside a Glance preview dismiss it, unless the page handles the key.
+const GLANCE_SCRIPT: &str = r#"addEventListener('keydown',e=>{if(!e.isTrusted||e.defaultPrevented||e.isComposing||window.top!==window)return;const k=e.key.toLowerCase(),plain=!e.ctrlKey&&!e.altKey&&!e.shiftKey&&!e.metaKey;if((plain&&k==='escape')||(e.ctrlKey&&!e.altKey&&!e.shiftKey&&k==='w')){e.preventDefault();window.ipc?.postMessage('{"action":"close_popup"}');}},true);"#;
+
+/// Opens a link preview in the popup window, centered over the browser and sharing the tab profile.
+fn open_glance(
+    host: &PopupHost,
+    context: &mut WebContext,
+    url: &str,
+    private: bool,
+    proxy: &EventLoopProxy<UserEvent>,
+) -> wry::Result<()> {
+    *host.view.borrow_mut() = None;
+    let scale = host.main.scale_factor();
+    let main_size = host.main.inner_size().to_logical::<f64>(scale);
+    let size = LogicalSize::new(
+        (main_size.width * 0.82).max(360.),
+        (main_size.height * 0.86).max(420.),
+    );
+    host.window.set_inner_size(size);
+    if let Ok(outer) = host.main.outer_position() {
+        let main_pos = outer.to_logical::<f64>(scale);
+        host.window.set_outer_position(LogicalPosition::new(
+            main_pos.x + (main_size.width - size.width) * 0.5,
+            main_pos.y + (main_size.height - size.height) * 0.5,
+        ));
+    }
+    host.window.set_title("Glance — Veluno");
+    host.glance.set(true);
+    host.auth_seen.set(false);
+    *host.url.borrow_mut() = url.to_string();
+    if !host.headless {
+        host.window.set_minimized(false);
+        host.window.set_visible(true);
+        host.window.set_focus();
+    }
+    let title_proxy = proxy.clone();
+    let nav_proxy = proxy.clone();
+    let tab_proxy = proxy.clone();
+    let ipc_proxy = proxy.clone();
+    let mut builder = WebViewBuilder::new_with_web_context(context)
+        .with_incognito(private)
+        .with_bounds(popup_bounds(&host.window).1)
+        .with_focused(!host.headless)
+        .with_clipboard(true)
+        .with_initialization_script(GLANCE_SCRIPT)
+        .with_document_title_changed_handler(move |text| {
+            let _ = title_proxy.send_event(UserEvent::PopupTitle(text));
+        })
+        .with_navigation_handler(move |target| {
+            let allowed = profile::allowed_url(&target)
+                || target == "about:blank"
+                || target.starts_with("data:text/html;");
+            if !allowed {
+                let _ = nav_proxy.send_event(UserEvent::Status(
+                    "This link uses an unsupported application protocol.".into(),
+                ));
+            }
+            allowed
+        })
+        .with_new_window_req_handler(move |target, _| {
+            if profile::allowed_url(&target) {
+                let _ =
+                    tab_proxy.send_event(UserEvent::Command(Command::NewTab { url: Some(target) }));
+            }
+            NewWindowResponse::Deny
+        })
+        .with_ipc_handler(move |request| {
+            if let Ok(Command::ClosePopup) = serde_json::from_str::<Command>(request.body()) {
+                let _ = ipc_proxy.send_event(UserEvent::Command(Command::ClosePopup));
+            }
+        });
+    // WebView2 rejects a second view on the tab profile unless its environment options match.
+    #[cfg(windows)]
+    {
+        use wry::WebViewBuilderExtWindows;
+        if host.headless
+            && let Ok(arguments) = std::env::var("VELUNO_SMOKE_CONTENT_BROWSER_ARGUMENTS")
+        {
+            builder = builder.with_additional_browser_args(arguments);
+        }
+        if extensions::enabled_at_startup() {
+            builder = builder.with_browser_extensions_enabled(true);
+        }
+    }
+    let view = builder.with_url(url).build_as_child(&*host.window)?;
+    let _ = desktop::attach_popup(&view, proxy.clone());
+    let _ = desktop::apply_privacy(&view, &settings::get());
+    *host.view.borrow_mut() = Some(view);
+    let _ = proxy.send_event(UserEvent::PopupState(url.to_string(), true));
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -629,6 +843,7 @@ fn content(
                                 | Command::NewPrivateTab
                                 | Command::ToggleReader
                                 | Command::OpenSettings { .. }
+                                | Command::Glance { .. }
                         ))
                 {
                     let _ = ipc.send_event(UserEvent::Command(message.command));
@@ -927,6 +1142,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         view: Rc::new(RefCell::new(None)),
         url: Rc::new(RefCell::new(String::new())),
         auth_seen: Rc::new(Cell::new(false)),
+        glance: Rc::new(Cell::new(false)),
         headless,
     };
     let mut state = BrowserState::restore();
@@ -1055,7 +1271,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         })
         .with_ipc_handler(move |request| {
-            if let Ok(command @ Command::ExpandPopup { .. }) =
+            if let Ok(command @ (Command::ExpandPopup { .. } | Command::ClosePopup)) =
                 serde_json::from_str::<Command>(request.body())
             {
                 let _ = popup_bar_proxy.send_event(UserEvent::Command(command));
@@ -1109,7 +1325,11 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut palette_shown = true;
     let mut palette_needs_open = false;
     let mut visible_id = None;
-    let mut last_content_bounds = None;
+    let mut placed: HashMap<usize, Rect> = HashMap::new();
+    let mut panel: Option<(WebView, String)> = None;
+    let mut panel_placed: Option<Rect> = None;
+    let mut panel_shown = false;
+    let mut shown: Vec<usize> = Vec::new();
     let mut last_sidebar_state = String::new();
     let mut sleep_pending = HashSet::new();
     let mut recovery = recovery::Recovery::default();
@@ -1166,6 +1386,10 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         let tick = matches!(event, Event::UserEvent(UserEvent::Frame));
         match event {
             Event::WindowEvent { window_id, event: WindowEvent::Focused(true), .. } if window_id == window.id() => {
+                // Returning to the browser dismisses a Glance preview, like clicking outside it.
+                if popup_host.glance.get() && popup_host.view.borrow().is_some() {
+                    let _ = proxy.send_event(UserEvent::Command(Command::ClosePopup));
+                }
                 state.is_default_browser = desktop::is_default_browser();
                 for tab in state.tabs.iter().filter(|tab| tab.url == "veluno://settings") {
                     if let Some(view) = views.get(&tab.id) {
@@ -1237,9 +1461,11 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         | Command::TogglePin { .. } | Command::CycleTab { .. } | Command::FocusAddress
                         | Command::OpenSettings { .. } | Command::OpenHistory | Command::ImportBookmarks { .. } | Command::DuplicateTab { .. }
                         | Command::MoveTabToWorkspace { .. } | Command::ExpandPopup { .. }
-                        | Command::ReorderTab { .. } | Command::RenameWorkspace { .. } | Command::DeleteWorkspace { .. } | Command::ToggleMute { .. }
+                        | Command::ReorderTab { .. } | Command::RenameWorkspace { .. } | Command::SetWorkspaceEmoji { .. } | Command::DeleteWorkspace { .. } | Command::ToggleMute { .. }
                         | Command::DismissUpdate { .. }
-                        | Command::ToggleBookmark { .. } | Command::NewPrivateTab));
+                        | Command::ToggleBookmark { .. } | Command::NewPrivateTab
+                        | Command::SplitTab { .. } | Command::Unsplit
+                        | Command::OpenInSidePanel { .. } | Command::ToggleSidePanel));
                 match event {
                     UserEvent::Audio(id, generation, playing, muted) => {
                         if let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == id && tab.generation == generation) {
@@ -1400,7 +1626,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         popup_loading = loading;
                         if !url.is_empty() && url != "about:blank" {
                             // A sign-in flow that lands on a normal page instead of closing belongs in the main window.
-                            if profile::is_auth_url(&url) {
+                            if popup_host.glance.get() {
+                                // Glance previews stay put until the user opens them as a tab.
+                            } else if profile::is_auth_url(&url) {
                                 popup_host.auth_seen.set(true);
                             } else if !loading && popup_host.auth_seen.get() && popup_host.view.borrow().is_some() {
                                 let _ = proxy.send_event(UserEvent::Command(Command::ExpandPopup { url: url.clone() }));
@@ -1417,6 +1645,13 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         if !headless { window.set_focus(); }
                     },
                     UserEvent::Frame => {},
+                    UserEvent::Focused(id, generation) => {
+                        // Clicking into the other split pane makes it the active tab.
+                        if id == state.active_tab_id || state.split_partner() != Some(id)
+                            || !state.tabs.iter().any(|tab| tab.id == id && tab.generation == generation) { return; }
+                        state.switch_tab(id);
+                        session_dirty = true;
+                    },
                     UserEvent::PaletteReady => { palette_needs_open = palette_open; },
                     UserEvent::External(urls) => {
                         if !headless { window.set_minimized(false); window.set_focus(); }
@@ -1532,6 +1767,25 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                     window.set_focus();
                                 }
                             },
+                            Command::SplitTab { id } => { if state.split_with(id) { palette_open = false; } },
+                            Command::Unsplit => { state.split = None; },
+                            Command::OpenInSidePanel { id } => { state.open_in_side_panel(id); },
+                            Command::ToggleSidePanel => { state.side_panel_open = !state.side_panel_open && state.side_panel_url.is_some(); },
+                            Command::ClosePopup => {
+                                *popup_host.view.borrow_mut() = None;
+                                popup_host.window.set_visible(false);
+                                if !headless {
+                                    window.set_focus();
+                                    if let Some(view) = views.get(&state.active_tab_id) { let _ = view.focus(); }
+                                }
+                            },
+                            Command::Glance { url } => if profile::allowed_url(&url) && !profile::is_internal(&url) {
+                                let private = state.is_private(state.active_tab_id);
+                                if let Err(error) = open_glance(&popup_host, &mut context, &url, private, &proxy) {
+                                    popup_host.window.set_visible(false);
+                                    state.update_status = Some(format!("Could not open Glance: {error}"));
+                                }
+                            },
                             Command::SwitchProfile { index } => {
                                 if let Some(profile) = state.workspaces.get(index.saturating_sub(1)) { let id = profile.id; state.switch_workspace(id); }
                             },
@@ -1550,6 +1804,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::ReorderTab { id, target, after } => state.reorder_tab(id, target, after),
                             Command::RenameWorkspace { id, name } => {
                                 if let Err(error) = state.rename_workspace(id, &name) { state.update_status = Some(error); }
+                            },
+                            Command::SetWorkspaceEmoji { id, emoji } => {
+                                if let Err(error) = state.set_workspace_emoji(id, &emoji) { state.update_status = Some(error); }
                             },
                             Command::DeleteWorkspace { id, destination } => {
                                 if let Err(error) = state.delete_workspace(id, destination) { state.update_status = Some(error); }
@@ -1603,7 +1860,15 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::ClearHistory => history::clear(),
                             Command::SetSetting { key, value } => match settings::set(&key, &value) {
                                 Ok(current) => {
-                                    if key == "search_engine" {
+                                    if key == "accent" {
+                                        let script = ui::accent_script();
+                                        for view in [&sidebar, &palette, &topbar, &popup_bar] { let _ = view.evaluate_script(&script); }
+                                        for tab in state.tabs.iter().filter(|tab| profile::is_internal(&tab.url)) {
+                                            if let Some(view) = views.get(&tab.id) { let _ = view.evaluate_script(&script); }
+                                        }
+                                    } else if key == "sidebar_right" {
+                                        let _ = sidebar.evaluate_script(&format!("document.body.classList.toggle('right',{})", current.sidebar_right));
+                                    } else if key == "search_engine" {
                                         let script = ui::search_script();
                                         let _ = sidebar.evaluate_script(&script);
                                         let _ = palette.evaluate_script(&script);
@@ -1800,6 +2065,16 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                 Err(error) => { state.update_status = Some(format!("Could not open this tab: {error}")); }
             }
         }
+        let pair = state.split_pair();
+        if let Some(partner) = pair.and_then(|_| state.split_partner())
+            && let std::collections::hash_map::Entry::Vacant(entry) = views.entry(partner)
+        {
+            match content(&window, &mut context, &mut state, partner, &proxy, &popup_host, false) {
+                Ok(view) => { entry.insert(view); created = true; },
+                Err(error) => { state.split = None; state.update_status = Some(format!("Could not open split view: {error}")); },
+            }
+        }
+        let pair = state.split_pair();
         zooms.retain(|id, _| views.contains_key(id));
         hidden_at.retain(|id, _| views.contains_key(id));
         state.zoom = zooms.get(&active_id).copied().unwrap_or(100);
@@ -1822,20 +2097,59 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             let _ = topbar.set_bounds(topbar_bounds);
             return;
         }
-        let geometry = (window.inner_size(), window.scale_factor(), state.sidebar_collapsed);
-        if last_content_bounds != Some(geometry) {
-            for view in views.values() { let _ = view.set_bounds(content_bounds); }
-            last_content_bounds = Some(geometry);
+        let content_bounds = match state.side_panel_url.clone().filter(|_| state.side_panel_open) {
+            Some(url) => {
+                let (rest, panel_rect) = side_panel_bounds(content_bounds, window.scale_factor(), settings::sidebar_right());
+                if panel.as_ref().is_none_or(|(_, loaded)| loaded != &url) {
+                    panel = None;
+                    panel_placed = None;
+                    match side_panel(&window, &mut context, &url, panel_rect, &proxy) {
+                        Ok(view) => panel = Some((view, url)),
+                        Err(error) => { state.side_panel_open = false; state.update_status = Some(format!("Could not open the side panel: {error}")); },
+                    }
+                }
+                if let Some((view, _)) = &panel {
+                    if panel_placed != Some(panel_rect) {
+                        let _ = view.set_bounds(panel_rect);
+                        let physical = panel_rect.size.to_physical::<i32>(window.scale_factor());
+                        let radius = if window.is_maximized() || window.fullscreen().is_some() { 0 } else { (ui::CONTENT_RADIUS * window.scale_factor()) as i32 };
+                        desktop::round(view, physical.width, physical.height, radius);
+                        panel_placed = Some(panel_rect);
+                    }
+                    if !panel_shown { desktop::show(view, true); panel_shown = true; }
+                }
+                if state.side_panel_open { rest } else { content_bounds }
+            }
+            None => {
+                if panel_shown && let Some((view, _)) = &panel { desktop::show(view, false); }
+                panel_shown = false;
+                content_bounds
+            }
+        };
+        let panes = split_bounds(content_bounds, window.scale_factor());
+        let pane = |id: usize| match pair { Some([left, _]) if id == left => panes.0, Some([_, right]) if id == right => panes.1, _ => content_bounds };
+        placed.retain(|id, _| views.contains_key(id));
+        for (id, view) in &views {
+            let target = pane(*id);
+            if placed.get(id) != Some(&target) { let _ = view.set_bounds(target); placed.insert(*id, target); }
         }
-        if visible_id != Some(active_id) || created {
-            if let Some(id) = visible_id && let Some(view) = views.get(&id) { desktop::show(view, false); hidden_at.entry(id).or_insert(now); }
-            if let Some(view) = views.get(&active_id) { desktop::show(view, true); hidden_at.remove(&active_id); }
+        let wanted: Vec<usize> = pair.map_or_else(|| vec![active_id], |pair| pair.to_vec());
+        if wanted != shown || created {
+            for id in shown.iter().filter(|id| !wanted.contains(id)) {
+                if let Some(view) = views.get(id) { desktop::show(view, false); hidden_at.entry(*id).or_insert(now); }
+            }
+            for id in &wanted {
+                if let Some(view) = views.get(id) { desktop::show(view, true); hidden_at.remove(id); }
+            }
+            shown = wanted;
         }
-        let physical = content_bounds.size.to_physical::<u32>(window.scale_factor());
         let radius = if window.is_maximized() || window.fullscreen().is_some() { 0 } else { (ui::CONTENT_RADIUS * window.scale_factor()) as i32 };
-        let shape = (physical.width, physical.height, radius);
         rounded.retain(|id, _| views.contains_key(id));
-        for (id, view) in &views { if rounded.get(id) != Some(&shape) { desktop::round(view, shape.0 as i32, shape.1 as i32, radius); rounded.insert(*id, shape); } }
+        for (id, view) in &views {
+            let physical = pane(*id).size.to_physical::<u32>(window.scale_factor());
+            let shape = (physical.width, physical.height, radius);
+            if rounded.get(id) != Some(&shape) { desktop::round(view, shape.0 as i32, shape.1 as i32, radius); rounded.insert(*id, shape); }
+        }
         let _ = topbar.set_bounds(topbar_bounds);
         if !palette_open {
             if state.sidebar_collapsed {

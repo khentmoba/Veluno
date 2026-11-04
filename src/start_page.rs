@@ -6,7 +6,7 @@ pub fn get_start_page_html(state: &BrowserState) -> String {
         "bookmarks": state.bookmarks,
         "history": history::all(),
     });
-    include_str!("start_page.html")
+    crate::ui::themed(include_str!("start_page.html"))
         .replace("__COMMON_SCRIPT__", &crate::ui::script())
         .replace("__SHORTCUTS__", &data.to_string().replace('<', "\\u003c"))
 }

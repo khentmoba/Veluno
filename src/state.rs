@@ -8,6 +8,9 @@ pub struct Workspace {
     pub name: String,
     pub icon: String,
     pub accent: String,
+    /// An emoji shown beside the workspace name, chosen by the user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
     /// Private profiles open InPrivate pages and are never saved or recorded in history.
     #[serde(default)]
     pub private: bool,
@@ -110,6 +113,14 @@ pub struct BrowserState {
     pub update_busy: bool,
     #[serde(default)]
     pub zoom: u32,
+    /// Two tabs shown side by side whenever either is active. Not restored after a restart.
+    #[serde(default, skip_deserializing)]
+    pub split: Option<[usize; 2]>,
+    /// The site docked in the side web panel, kept across restarts.
+    #[serde(default)]
+    pub side_panel_url: Option<String>,
+    #[serde(default)]
+    pub side_panel_open: bool,
 }
 
 impl BrowserState {
@@ -119,6 +130,7 @@ impl BrowserState {
             name: "General".into(),
             icon: "home".into(),
             accent: "#dedee3".into(),
+            emoji: None,
             private: false,
         }];
 
@@ -171,6 +183,9 @@ impl BrowserState {
             is_default_browser: false,
             update_busy: false,
             zoom: 100,
+            split: None,
+            side_panel_url: None,
+            side_panel_open: false,
         }
     }
 
@@ -455,6 +470,7 @@ impl BrowserState {
                 live.contains(&tab.id)
                     && (over_budget || idle.contains(&tab.id))
                     && tab.id != self.active_tab_id
+                    && Some(tab.id) != self.split_partner()
                     && !tab.is_pinned
                     && !tab.is_sleeping
                     && !tab.is_loading
@@ -492,6 +508,7 @@ impl BrowserState {
             name: name.into(),
             icon: "globe".into(),
             accent: "#dedee3".into(),
+            emoji: None,
             private: false,
         });
         self.switch_workspace(id);
@@ -516,6 +533,21 @@ impl BrowserState {
             .find(|w| w.id == id && !w.private)
             .ok_or("This workspace cannot be renamed.")?;
         workspace.name = name.into();
+        Ok(())
+    }
+
+    /// Sets or clears (with an empty string) a regular workspace's emoji.
+    pub fn set_workspace_emoji(&mut self, id: usize, emoji: &str) -> Result<(), String> {
+        let emoji = emoji.trim();
+        if emoji.chars().count() > 8 || emoji.chars().any(|c| c.is_ascii() || c.is_control()) {
+            return Err("Choose a single emoji for the workspace icon.".into());
+        }
+        let workspace = self
+            .workspaces
+            .iter_mut()
+            .find(|w| w.id == id && !w.private)
+            .ok_or("This workspace's icon cannot be changed.")?;
+        workspace.emoji = (!emoji.is_empty()).then(|| emoji.into());
         Ok(())
     }
 
@@ -578,6 +610,7 @@ impl BrowserState {
                 name: "Private".into(),
                 icon: "private".into(),
                 accent: "#dedee3".into(),
+                emoji: None,
                 private: true,
             });
             id
@@ -687,7 +720,7 @@ impl BrowserState {
     }
 
     pub fn toggle_sleep(&mut self, tab_id: usize) {
-        if tab_id == self.active_tab_id {
+        if tab_id == self.active_tab_id || Some(tab_id) == self.split_partner() {
             return;
         }
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
@@ -696,8 +729,9 @@ impl BrowserState {
     }
 
     pub fn sleep_inactive_tabs(&mut self) {
+        let partner = self.split_partner();
         for tab in self.tabs.iter_mut() {
-            if tab.id != self.active_tab_id {
+            if tab.id != self.active_tab_id && Some(tab.id) != partner {
                 tab.is_sleeping = true;
             }
         }
@@ -788,6 +822,69 @@ impl BrowserState {
             (index + 1) % ids.len()
         };
         self.switch_tab(ids[next])
+    }
+
+    /// Shows `tab_id` beside the active tab. Both must be awake tabs in the same workspace.
+    pub fn split_with(&mut self, tab_id: usize) -> bool {
+        let active = self.active_tab_id;
+        let same_workspace = self.active_tab().and_then(|a| {
+            self.tabs
+                .iter()
+                .find(|t| t.id == tab_id)
+                .map(|t| t.workspace_id == a.workspace_id)
+        });
+        if tab_id == active || same_workspace != Some(true) {
+            return false;
+        }
+        if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+            tab.is_sleeping = false;
+        }
+        self.split = Some([active, tab_id]);
+        true
+    }
+
+    /// The split pair while one of its tabs is active, dropping a pair that no longer fits.
+    pub fn split_pair(&mut self) -> Option<[usize; 2]> {
+        let pair = self.split?;
+        let tabs: Vec<_> = pair
+            .iter()
+            .filter_map(|id| self.tabs.iter().find(|t| t.id == *id))
+            .collect();
+        if tabs.len() != 2
+            || tabs[0].workspace_id != tabs[1].workspace_id
+            || tabs
+                .iter()
+                .any(|t| t.is_sleeping && t.id != self.active_tab_id)
+        {
+            self.split = None;
+            return None;
+        }
+        pair.contains(&self.active_tab_id).then_some(pair)
+    }
+
+    /// Docks a regular web tab's address in the side panel and shows the panel.
+    pub fn open_in_side_panel(&mut self, tab_id: usize) -> bool {
+        let Some(tab) = self.tabs.iter().find(|t| t.id == tab_id) else {
+            return false;
+        };
+        if self.is_private(tab_id)
+            || !(tab.url.starts_with("https://") || tab.url.starts_with("http://"))
+        {
+            return false;
+        }
+        self.side_panel_url = Some(tab.url.clone());
+        self.side_panel_open = true;
+        true
+    }
+
+    /// The other half of the split while the active tab is in it.
+    pub fn split_partner(&self) -> Option<usize> {
+        let [a, b] = self.split?;
+        match self.active_tab_id {
+            id if id == a => Some(b),
+            id if id == b => Some(a),
+            _ => None,
+        }
     }
 
     pub fn active_tab(&self) -> Option<&Tab> {
@@ -1000,6 +1097,92 @@ impl BrowserState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn side_panel_docks_only_regular_web_pages() {
+        let mut state = BrowserState::new();
+        let home = state.active_tab_id;
+        assert!(!state.open_in_side_panel(home));
+        let page = state.add_tab(Some("https://example.com/notes".into()), false);
+        assert!(state.open_in_side_panel(page));
+        assert_eq!(
+            state.side_panel_url.as_deref(),
+            Some("https://example.com/notes")
+        );
+        assert!(state.side_panel_open);
+        let private = state.open_private_tab();
+        state.update_active_tab("https://example.com/secret".into(), None);
+        assert!(!state.open_in_side_panel(private));
+        assert_eq!(
+            state.side_panel_url.as_deref(),
+            Some("https://example.com/notes")
+        );
+        let saved = serde_json::to_string(&state).unwrap();
+        let restored = BrowserState::from_session(&saved).unwrap();
+        assert_eq!(
+            restored.side_panel_url.as_deref(),
+            Some("https://example.com/notes")
+        );
+    }
+
+    #[test]
+    fn workspace_emoji_is_validated_and_clearable() {
+        let mut state = BrowserState::new();
+        assert!(state.set_workspace_emoji(1, "\u{1F4DA}").is_ok());
+        assert_eq!(state.workspaces[0].emoji.as_deref(), Some("\u{1F4DA}"));
+        assert!(state.set_workspace_emoji(1, "<b>").is_err());
+        assert!(
+            state
+                .set_workspace_emoji(1, "\u{1F468}\u{200D}\u{1F4BB}")
+                .is_ok()
+        );
+        assert!(state.set_workspace_emoji(1, "").is_ok());
+        assert_eq!(state.workspaces[0].emoji, None);
+        let private = state.open_private_tab();
+        let private = state
+            .tabs
+            .iter()
+            .find(|t| t.id == private)
+            .unwrap()
+            .workspace_id;
+        assert!(state.set_workspace_emoji(private, "\u{1F4DA}").is_err());
+    }
+
+    #[test]
+    fn split_view_keeps_both_tabs_awake_and_ends_when_a_tab_leaves() {
+        let mut state = BrowserState::new();
+        let left = state.add_tab(Some("https://example.com/left".into()), false);
+        let right = state.add_tab(Some("https://example.com/right".into()), false);
+        state.toggle_sleep(left);
+        assert!(state.split_with(left));
+        assert_eq!(state.split_pair(), Some([right, left]));
+        assert!(
+            !state
+                .tabs
+                .iter()
+                .find(|t| t.id == left)
+                .unwrap()
+                .is_sleeping
+        );
+        state.sleep_inactive_tabs();
+        assert!(
+            !state
+                .tabs
+                .iter()
+                .find(|t| t.id == left)
+                .unwrap()
+                .is_sleeping
+        );
+        state.switch_tab(left);
+        assert_eq!(state.split_partner(), Some(right));
+        assert!(!state.split_with(left), "a tab cannot split with itself");
+        let private = state.open_private_tab();
+        state.switch_tab(right);
+        assert!(!state.split_with(private), "split panes share a workspace");
+        state.close_tab(left);
+        assert_eq!(state.split_pair(), None);
+        assert_eq!(state.split, None);
+    }
 
     #[test]
     fn download_tab_cleanup_returns_to_opener_without_undo_or_focus_theft() {

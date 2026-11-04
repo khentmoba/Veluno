@@ -623,6 +623,14 @@ pub fn attach(
                 &mut token,
             )?;
         }
+        let focused = proxy.clone();
+        view.controller().add_GotFocus(
+            &FocusChangedEventHandler::create(Box::new(move |_, _| {
+                let _ = focused.send_event(UserEvent::Focused(id, generation));
+                Ok(())
+            })),
+            &mut token,
+        )?;
         let keys = proxy.clone();
         view.controller().add_AcceleratorKeyPressed(
             &AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
@@ -885,6 +893,17 @@ pub fn attach(
         )?;
     }
     Ok(())
+}
+
+/// Blocks ads in a WebView that is not a tab, such as the side web panel.
+pub fn block_view_ads(view: &WebView) {
+    #[cfg(windows)]
+    {
+        use wry::WebViewExtWindows;
+        let _ = block_ads(&view.webview());
+    }
+    #[cfg(not(windows))]
+    let _ = view;
 }
 
 /// Runs every request through Brave's engine and hides known ad slots on each page.

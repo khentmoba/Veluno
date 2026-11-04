@@ -94,4 +94,105 @@ export async function checkBrowserControls(sidebar, command, origin, port, artif
   assert.equal(await sidebar.evaluate(`currentState.tabs.find(t=>t.id===${a}).is_muted`),true,'native mute is reapplied before loading a recreated page');
   await awakened.evaluate('recreatedTone.stop();recreatedAudio.close();true');
   console.log('Native tab ordering, workspace rename/delete with live draft retention, audio/mute events, and origin-scoped cookie/storage clearing passed.');
+  await checkGlance(sidebar, awakened, origin, port, artifacts);
+  await command('set_setting', { key: 'accent', value: 'glacier' });
+  await until(() => sidebar.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()==='#8ecbff'`), 'accent applies live to the sidebar');
+  await command('set_setting', { key: 'accent', value: 'neutral' });
+  await until(() => sidebar.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()==='#dedee3'`), 'accent resets');
+  console.log('Accent color changes apply live to the sidebar.');
+  await checkSplitView(sidebar, command, awakened, a, b, origin, port, artifacts);
+  const space = await sidebar.evaluate('currentState.active_workspace_id');
+  await sidebar.evaluate(`document.getElementById('profiles').open=true;document.querySelector('#workspace-emojis button[aria-label="Use \u{1F4DA} as the workspace icon"]').click();true`);
+  await until(() => sidebar.evaluate(`currentState.workspaces.find(w=>w.id===${space}).emoji==='\u{1F4DA}'&&document.getElementById('workspace-emoji').textContent==='\u{1F4DA}'&&!document.getElementById('workspace-emoji').hidden`), 'workspace emoji shows in the heading');
+  assert.ok(await sidebar.evaluate(`document.getElementById('profile-current').textContent.startsWith('\u{1F4DA} ')`));
+  await sidebar.evaluate(`document.querySelector('#workspace-emojis button[aria-label="No workspace icon"]').click();document.getElementById('profiles').open=false;true`);
+  await until(() => sidebar.evaluate(`!currentState.workspaces.find(w=>w.id===${space}).emoji&&document.getElementById('workspace-emoji').hidden`), 'workspace emoji clears');
+  console.log('Workspace emoji icons can be chosen from the workspace menu and cleared.');
+  await checkSidePanel(sidebar, command, a, b, origin, port);
+}
+
+async function checkSidePanel(sidebar, command, a, b, origin, port) {
+  await command('switch_tab', { id: b });
+  await until(() => sidebar.evaluate(`currentState.active_tab_id===${b}`), 'side panel test tab');
+  const page = await connect(target => target.url === origin + '/controls-b', port);
+  const before = new Set((await targets(port)).map(target => target.id));
+  const fullWidth = await page.evaluate('innerWidth');
+  await command('open_in_side_panel', { id: a });
+  const panel = await connect(target => target.url === origin + '/controls-a' && !before.has(target.id), port);
+  await until(() => panel.evaluate('document.readyState==="complete"&&document.visibilityState==="visible"'), 'side panel loads beside the page');
+  await until(async () => await page.evaluate('innerWidth') < fullWidth - 100, 'the page narrows for the side panel');
+  assert.equal(await sidebar.evaluate(`document.getElementById('app-side-panel-label').textContent`), 'Hide side panel');
+  assert.equal(await sidebar.evaluate('currentState.active_tab_id'), b, 'docking a site keeps the current tab');
+  await panel.evaluate('window.panelMarker=1;true');
+  await command('toggle_side_panel');
+  await until(async () => !(await panel.evaluate('document.visibilityState==="visible"')) && await page.evaluate('innerWidth') === fullWidth, 'hiding the side panel restores the page width');
+  await command('toggle_side_panel');
+  await until(() => panel.evaluate('document.visibilityState==="visible"'), 'side panel shows again');
+  assert.equal(await panel.evaluate('window.panelMarker'), 1, 'the side panel keeps its page while hidden');
+  await command('toggle_side_panel');
+  await until(async () => await page.evaluate('innerWidth') === fullWidth, 'side panel hidden for later checks');
+  console.log('The side web panel docks a site beside the current tab, narrows the page, and hides without reloading.');
+}
+
+async function checkSplitView(sidebar, command, left, a, b, origin, port, artifacts) {
+  const other = await sidebar.evaluate('currentState.active_tab_id');
+  await command('switch_tab', { id: a });
+  await command('split_tab', { id: b });
+  await until(() => sidebar.evaluate(`JSON.stringify(currentState.split)===${JSON.stringify(JSON.stringify([a, b]))}`), 'split pair');
+  const right = await connect(target => target.url === origin + '/controls-b', port);
+  const visible = view => view.evaluate('document.visibilityState==="visible"');
+  await until(async () => await visible(left) && await visible(right), 'both split panes are visible');
+  const [leftWidth, rightWidth, sidebarWidth] = await Promise.all([left.evaluate('innerWidth'), right.evaluate('innerWidth'), sidebar.evaluate('innerWidth')]);
+  assert.ok(Math.abs(leftWidth - rightWidth) <= 1, `panes share the width: ${leftWidth} vs ${rightWidth}`);
+  assert.ok(leftWidth < 300, `each pane is half the content area: ${leftWidth} beside a ${sidebarWidth}px sidebar`);
+  assert.equal(await sidebar.evaluate(`document.querySelectorAll('.tab.split').length`), 2, 'sidebar marks both split tabs');
+  if (artifacts) {
+    const screenshot = await sidebar.call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(artifacts, 'split-view-sidebar.png'), Buffer.from(screenshot.data, 'base64'));
+  }
+  await command('switch_tab', { id: other });
+  await until(async () => !(await visible(left)) && !(await visible(right)), 'leaving the split hides both panes');
+  await command('switch_tab', { id: b });
+  await until(async () => await visible(left) && await visible(right), 'selecting either split tab shows both');
+  await command('unsplit');
+  await until(async () => !(await visible(left)) && await visible(right), 'closing split view keeps only the active tab');
+  assert.ok(await right.evaluate('innerWidth') > leftWidth + 100, 'the active tab regains the full width');
+  console.log('Split View shows two tabs side by side, follows tab selection, and closes back to one tab.');
+}
+
+async function targets(port) {
+  return (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+}
+
+async function checkGlance(sidebar, page, origin, port, artifacts) {
+  const glanceUrl = origin + '/glance-target';
+  const tabsBefore = await sidebar.evaluate('currentState.tabs.length');
+  const activeBefore = await sidebar.evaluate('currentState.active_tab_id');
+  const altClick = async () => {
+    const { x, y } = await page.evaluate(`(() => {
+      document.getElementById('glance-link')?.remove();
+      document.body.insertAdjacentHTML('afterbegin','<a id="glance-link" href="/glance-target" style="display:block;padding:20px">Glance</a>');
+      const rect = document.getElementById('glance-link').getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    })()`);
+    for (const type of ['mousePressed', 'mouseReleased']) await page.call('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1, modifiers: 1 });
+  };
+  await altClick();
+  const glance = await connect(target => target.url === glanceUrl, port);
+  await until(() => glance.evaluate('document.readyState==="complete"'), 'Glance preview loads');
+  assert.equal(await page.evaluate('location.pathname'), '/controls-a', 'Alt+Click leaves the current tab in place');
+  assert.equal(await sidebar.evaluate('currentState.tabs.length'), tabsBefore, 'Glance does not create a tab');
+  assert.equal(await sidebar.evaluate('currentState.active_tab_id'), activeBefore);
+  if (artifacts) {
+    const screenshot = await glance.call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(artifacts, 'glance.png'), Buffer.from(screenshot.data, 'base64'));
+  }
+  for (const type of ['keyDown', 'keyUp']) await glance.call('Input.dispatchKeyEvent', { type, key: 'Escape', windowsVirtualKeyCode: 27 }, { allowTargetClose: true });
+  await until(async () => !(await targets(port)).some(target => target.url === glanceUrl), 'Escape closes Glance');
+  await altClick();
+  await connect(target => target.url === glanceUrl, port);
+  await sidebar.evaluate(`window.ipc.postMessage(JSON.stringify({action:'expand_popup',url:${JSON.stringify(glanceUrl)}}));true`);
+  await until(() => sidebar.evaluate(`currentState.tabs.some(t=>t.url===${JSON.stringify(glanceUrl)}&&t.id===currentState.active_tab_id)`), 'Open as tab promotes Glance');
+  assert.equal(await sidebar.evaluate('currentState.tabs.length'), tabsBefore + 1);
+  console.log('Glance: Alt+Click previews a link without leaving the tab, Escape dismisses it, and Open as tab promotes it.');
 }

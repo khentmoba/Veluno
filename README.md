@@ -14,6 +14,9 @@
 - **Rust desktop shell:** Tao handles the Windows window and Wry hosts WebView2.
 - **Independent live tabs:** Switching tabs preserves page state and native back/forward history while the tabs stay awake.
 - **Floating sign-in & OAuth popups:** Login, OAuth, and confirmation popups open in a Zen-style floating window that shares your profile and `window.opener` session, with a compact read-only URL bar and one-click promotion to a full tab.
+- **Glance link previews:** `Alt + Click` any web link to preview it in a large floating window centered over the browser, without leaving or changing the current tab. Press `Esc`, the close button, or click back into the browser to dismiss it, or choose **Open as tab** to keep it. Previews share the current tab's sign-ins (private tabs preview privately).
+- **Split View:** right-click a tab in the sidebar and choose **Split with current tab** to show both side by side. Selecting either tab shows the pair again, clicking into a pane makes it the active tab for the address bar, and **Close split view** in the same menu returns to one tab. Split tabs stay awake; the pair is not restored after a restart.
+- **Side web panel:** right-click a web tab and choose **Open in side panel** to dock that site (notes, chat, music) beside whatever tab you're viewing. **Show/Hide side panel** in the app menu toggles it without reloading the docked page, and the docked site is remembered across restarts. It shares your sign-ins and sits on the edge opposite the sidebar.
 - **Session recovery:** Tabs, workspace selection, pins, and recent closed tabs are saved locally, with a backup for recovery. Site storage uses a persistent WebView2 profile.
 - **Windows integration:** Setup wizard with uninstaller, Start menu and desktop shortcuts, Installed apps registration, default-browser eligibility, and link handoff to the running instance.
 - **Native downloads:** WebView2 provides download progress and file actions; Veluno reports completion and warns before closing active downloads.
@@ -21,6 +24,9 @@
 - **Ad blocking built in:** uBlock Origin Lite is downloaded on first launch (SHA-256 checked) and loaded into every tab as a WebView2 extension. Turn it off in **Settings > Privacy and security**.
 - **Bookmarks:** Press `Ctrl + D` or the star in the address bar. Bookmarks appear first in new-tab suggestions and at the top of History, where you can remove them. **Settings > General > Import bookmarks** copies web bookmarks from Chrome, Edge, Brave, Vivaldi, Opera, or Opera GX on the same computer, reading their local bookmark files only.
 - **Reader view:** Press `F9` (or **Reader view** in the app menu) on an article to read it in a clean, dark serif layout with adjustable text size. It runs only when you ask for it, and closing it leaves the page exactly as it was.
+- **Accent colors:** **Settings > General > Accent color** switches Veluno's own interface between Neutral, Amethyst, Glacier, Emerald, Amber, and Rose. The change applies immediately and never restyles websites.
+- **Sidebar position:** **Settings > General > Sidebar on the right** moves the tab sidebar to the right edge. It applies immediately, including the compact hover rail.
+- **Workspace icons:** pick an emoji for each regular workspace from the workspace menu. It appears beside the workspace name in the sidebar heading and the switcher.
 - **Tracking prevention and privacy controls:** WebView2's built-in tracking prevention (Basic, Balanced, or Strict) works with or without the ad blocker. Password saving is off by default, form autofill can be turned off, and `Ctrl + Shift + Delete` opens **Clear browsing data** for history, cookies and site data, cached files, or passwords and form data over the last hour, day, week, four weeks, or all time.
 - **Screenshots:** **Save screenshot** in the app menu saves the visible page as a PNG in `Pictures\Veluno`.
 - **Private tabs:** `Ctrl + Shift + N` (or **New private tab** in the app menu) opens a tab in the Private workspace. Its pages use an InPrivate WebView2 profile, and none of their tabs, history, or top sites are saved. Ad blocking may not apply to private pages.
@@ -82,6 +88,8 @@
 | `Ctrl + J` | Open Downloads |
 | `Ctrl + +` / `Ctrl + -` / `Ctrl + 0` | Zoom in, zoom out, or reset zoom |
 | `F11` | Toggle full screen |
+| `Alt + Click` (on a link) | Preview the link in Glance |
+| `Esc` (in Glance) | Close the preview |
 | `Enter` (in URL bar) | Smart navigate (detects URLs vs. web search) |
 
 **New tabs work like Zen:** press `Ctrl+T` or click **New tab** to open a floating search/address bar over the current page. Enter opens the destination in a new tab; matching open tabs, history, and top shortcuts can be selected with the arrow keys. Escape, the close button, or clicking outside cancels without creating an empty tab or reloading the page. The startup/Home page remains available separately. The sidebar, Home page, native title bar, and palette share a black/charcoal theme.
@@ -89,6 +97,8 @@
 The sidebar has no fixed shortcut-tile dock. Search opens/closes with short, interruptible motion, and tab and workspace changes retain visual continuity. Reduced-motion preferences skip spatial effects. Home-page shortcuts rank your most-visited sites (such as YouTube or X) first and fill any remaining slots from the default 8 shortcuts.
 
 Web searches use **Brave Search** by default (Settings can switch to DuckDuckGo, Google, or Bing) throughout the sidebar, Home page, and floating search bar. Suggestions come from your local open tabs, bookmarks, history, and shortcuts; no remote autocomplete requests are sent while typing. Strong site or title matches appear before web search and are selected when you press Enter. Ordinary queries and weak matches keep web search first, and an explicit web search choice is always available.
+
+**Search keywords:** start an address with `@yt`, `@gh`, `@w` (Wikipedia), `@r` (Reddit), `@maps`, `@g`, `@b`, `@ddg`, or `@brave` to search that site directly, for example `@yt lofi beats`. A keyword on its own opens the site.
 
 Shortcuts work while browser chrome or page content has focus. In pages they are caught natively before the page sees the key, so sites and focused iframes can't swallow them; `Ctrl + S`, `Ctrl + F`, and other keys not listed stay with the page. Right-clicking any tab in the sidebar opens quick actions to pin/unpin, duplicate, sleep/wake, move to another workspace, or close it. The bottom sidebar menu contains pin/unpin, reopen, and close-other-tabs actions. Close Others keeps pinned tabs, affects only the current workspace, and can be undone one tab at a time with Reopen.
 

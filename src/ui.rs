@@ -11,6 +11,7 @@ pub const CONTENT_RADIUS: f64 = 10.0;
 pub const TOPBAR_HOT_ZONE: f64 = 4.0;
 pub const TOPBAR_EXPANDED: f64 = 34.0;
 pub const POPUP_BAR_HEIGHT: f64 = 42.0;
+pub const SIDE_PANEL_WIDTH: f64 = 380.0;
 
 /// The shared page script, using the search engine chosen in Settings.
 pub fn script() -> String {
@@ -25,12 +26,32 @@ pub fn search_script() -> String {
     format!("Veluno.searchUrl='{url}';Veluno.searchName='{name}'")
 }
 
+/// Applies the Settings accent to Veluno's own pages. Never used for websites.
+pub fn themed(html: &str) -> String {
+    html.replace("#dedee3", settings::accent())
+}
+
+/// Updates the accent of an already loaded Veluno page.
+pub fn accent_script() -> String {
+    format!(
+        "document.documentElement.style.setProperty('--accent','{0}');document.documentElement.style.setProperty('--focus','{0}')",
+        settings::accent()
+    )
+}
+
 pub fn get_ui_html() -> String {
-    include_str!("ui.html").replace("__COMMON_SCRIPT__", &script())
+    let body = if settings::sidebar_right() {
+        "<body class=\"right\">"
+    } else {
+        "<body>"
+    };
+    themed(include_str!("ui.html"))
+        .replacen("<body>", body, 1)
+        .replace("__COMMON_SCRIPT__", &script())
 }
 
 pub fn get_new_tab_html() -> String {
-    include_str!("new_tab.html").replace("__COMMON_SCRIPT__", &script())
+    themed(include_str!("new_tab.html")).replace("__COMMON_SCRIPT__", &script())
 }
 
 pub fn get_history_html(bookmarks: &[Bookmark], shortcuts: &[Shortcut]) -> String {
@@ -41,7 +62,7 @@ pub fn get_history_html(bookmarks: &[Bookmark], shortcuts: &[Shortcut]) -> Strin
         "saving": settings::get().save_history,
         "shortcuts": shortcuts,
     });
-    include_str!("history.html")
+    themed(include_str!("history.html"))
         .replace("__COMMON_SCRIPT__", &script())
         .replace("__HISTORY__", &data.to_string().replace('<', "\\u003c"))
 }
@@ -72,6 +93,7 @@ pub fn get_settings_html() -> String {
         "section": section,
         "importers": crate::import::available(),
         "settings": settings::get(),
+        "accents": settings::ACCENTS,
         "engines": settings::ENGINES.iter().map(|(id, name, _)| [id, name]).collect::<Vec<_>>(),
         "ublock": extensions::status(),
         "ublock_active": extensions::active_at_startup(),
@@ -80,15 +102,15 @@ pub fn get_settings_html() -> String {
         "version": updater::CURRENT_VERSION,
         "is_default_browser": crate::desktop::is_default_browser(),
     });
-    include_str!("settings.html")
+    themed(include_str!("settings.html"))
         .replace("__COMMON_SCRIPT__", &script())
         .replace("__SETTINGS__", &data.to_string().replace('<', "\\u003c"))
 }
 
-pub fn get_topbar_html() -> &'static str {
-    include_str!("topbar.html")
+pub fn get_topbar_html() -> String {
+    themed(include_str!("topbar.html"))
 }
 
-pub fn get_popup_html() -> &'static str {
-    include_str!("popup.html")
+pub fn get_popup_html() -> String {
+    themed(include_str!("popup.html"))
 }

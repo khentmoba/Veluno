@@ -50,6 +50,9 @@ select { font:inherit; font-size:13px; color:var(--text); background:var(--activ
 <div class="row"><div><h2>Default browser</h2><p id="default-browser-status"></p></div><button class="btn" id="set-default-browser" data-send="default_browser">Open Windows settings</button></div>
 <div class="row"><div><h2>Check for updates automatically</h2><p>Veluno looks for a new version shortly after launch and every 6 hours.</p></div><button class="switch" role="switch" id="auto-update" aria-label="Check for updates automatically"></button></div>
 <div class="row"><div><h2>Import bookmarks</h2><p id="import-detail"></p></div><select id="import-source" aria-label="Browser to import from"></select><button class="btn" id="import-button">Import</button></div>
+<div class="row"><div><h2>Sidebar on the right</h2><p>Moves the tab sidebar to the right edge of the window.</p></div><button class="switch" role="switch" id="sidebar-right" aria-label="Sidebar on the right"></button></div>
+<h2>Accent color</h2>
+<div class="choices three" id="accents" role="radiogroup" aria-label="Accent color"></div>
 <div class="row"><div><h2>Update now</h2><p>Check for a new version of Veluno.</p></div><button class="btn" data-send="check_updates">Check for updates</button></div>
 </section>
 
@@ -106,7 +109,7 @@ window.setDefaultBrowser=isDefault=>{
 };
 window.setDefaultBrowser(data.is_default_browser);
 const sections=[...document.querySelectorAll('section')];
-const shortcuts=[['New tab','Ctrl + T'],['Close tab','Ctrl + W'],['Address bar','Ctrl + L'],['Reload','Ctrl + R / F5'],['Back / forward','Alt + Left / Right'],['Reopen closed tab','Ctrl + Shift + T'],['Next / previous tab','Ctrl + Tab / Ctrl + Shift + Tab'],['Switch workspace','Alt + 1-9'],['Reorder focused tab','Alt + Shift + Up / Down'],['Collapse sidebar','Ctrl + Shift + B'],['Sleep background tabs','Ctrl + Shift + S'],['History and bookmarks','Ctrl + H'],['Bookmark page','Ctrl + D'],['New private tab','Ctrl + Shift + N'],['Find in page','Ctrl + F'],['Reader view','F9'],['Clear browsing data','Ctrl + Shift + Delete'],['Downloads','Ctrl + J'],['Zoom in / out / reset','Ctrl + + / Ctrl + - / Ctrl + 0'],['Full screen','F11']];
+const shortcuts=[['New tab','Ctrl + T'],['Close tab','Ctrl + W'],['Address bar','Ctrl + L'],['Reload','Ctrl + R / F5'],['Back / forward','Alt + Left / Right'],['Reopen closed tab','Ctrl + Shift + T'],['Next / previous tab','Ctrl + Tab / Ctrl + Shift + Tab'],['Switch workspace','Alt + 1-9'],['Reorder focused tab','Alt + Shift + Up / Down'],['Collapse sidebar','Ctrl + Shift + B'],['Sleep background tabs','Ctrl + Shift + S'],['History and bookmarks','Ctrl + H'],['Bookmark page','Ctrl + D'],['New private tab','Ctrl + Shift + N'],['Find in page','Ctrl + F'],['Reader view','F9'],['Clear browsing data','Ctrl + Shift + Delete'],['Downloads','Ctrl + J'],['Zoom in / out / reset','Ctrl + + / Ctrl + - / Ctrl + 0'],['Full screen','F11'],['Preview a link (Glance)','Alt + Click']];
 $('keys').replaceChildren(...shortcuts.map(([name,keys])=>{ const row=document.createElement('tr'); const a=document.createElement('td'); a.textContent=name; const b=document.createElement('td'); for(const [index,part] of keys.split(' / ').entries()) { if(index) b.append(' / '); const kbd=document.createElement('kbd'); kbd.textContent=part.replace(/ \+ /g,' '); b.append(kbd); } row.append(a,b); return row; }));
 $('version').textContent='Version '+data.version;
 $('extensions-folder').textContent=data.extensions_folder;
@@ -149,7 +152,7 @@ function toggle(id,key) {
  button.onclick=()=>{ setting(key,!data.settings[key]); button.setAttribute('aria-checked',String(data.settings[key])); renderExtension(); };
 }
 toggle('auto-update','auto_update'); toggle('ad-blocker','ad_blocker'); toggle('save-history','save_history');
-toggle('save-passwords','save_passwords'); toggle('autofill','autofill');
+toggle('save-passwords','save_passwords'); toggle('autofill','autofill'); toggle('sidebar-right','sidebar_right');
 const tracking=[['basic','Basic','Blocks harmful trackers only. Most sites work as usual.'],['balanced','Balanced','Also blocks trackers from sites you have not visited. Recommended.'],['strict','Strict','Blocks most trackers across sites. Some pages may not work properly.']];
 function renderTracking() {
  $('tracking').replaceChildren(...tracking.map(([id,name])=>{
@@ -188,6 +191,14 @@ function renderEngines() {
  }));
 }
 renderEngines();
+function renderAccents() {
+ $('accents').replaceChildren(...data.accents.map(([id,name,color])=>{
+  const button=document.createElement('button'); button.className='choice'; button.setAttribute('role','radio'); button.setAttribute('aria-checked',String(data.settings.accent===id));
+  const dot=document.createElement('span'); dot.className='dot'; dot.style.borderColor=color; dot.style.background=color; const label=document.createElement('span'); label.textContent=name;
+  button.append(dot,label); button.onclick=()=>{ setting('accent',id); document.documentElement.style.setProperty('--accent',color); renderAccents(); }; return button;
+ }));
+}
+renderAccents();
 function renderExtension() {
  const state=data.ublock, wanted=data.settings.ad_blocker;
  let pill=['Not installed',''], detail='Blocks ads and trackers on the sites you visit.', action='';

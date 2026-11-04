@@ -13,6 +13,16 @@ pub const ENGINES: [(&str, &str, &str); 4] = [
     ("bing", "Bing", "https://www.bing.com/search?q="),
 ];
 
+/// Accent colors for Veluno's own interface: id, label, and color.
+pub const ACCENTS: [(&str, &str, &str); 6] = [
+    ("neutral", "Neutral", "#dedee3"),
+    ("amethyst", "Amethyst", "#c4a7ff"),
+    ("glacier", "Glacier", "#8ecbff"),
+    ("emerald", "Emerald", "#7ee0a1"),
+    ("amber", "Amber", "#f0c674"),
+    ("rose", "Rose", "#ff9fb7"),
+];
+
 /// WebView2 tracking prevention levels offered in Settings.
 pub const TRACKING_LEVELS: [&str; 3] = ["basic", "balanced", "strict"];
 
@@ -26,6 +36,8 @@ pub struct Settings {
     pub tracking_prevention: String,
     pub save_passwords: bool,
     pub autofill: bool,
+    pub accent: String,
+    pub sidebar_right: bool,
 }
 
 impl Default for Settings {
@@ -38,6 +50,8 @@ impl Default for Settings {
             tracking_prevention: "balanced".into(),
             save_passwords: false,
             autofill: true,
+            accent: "neutral".into(),
+            sidebar_right: false,
         }
     }
 }
@@ -73,6 +87,23 @@ pub fn engine() -> (&'static str, &'static str) {
     (name, url)
 }
 
+/// Whether the sidebar sits on the right edge of the window.
+pub fn sidebar_right() -> bool {
+    current()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .sidebar_right
+}
+
+pub fn accent() -> &'static str {
+    let id = get().accent;
+    ACCENTS
+        .iter()
+        .find(|(key, ..)| *key == id)
+        .unwrap_or(&ACCENTS[0])
+        .2
+}
+
 pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
     let mut settings = get();
     match (key, value) {
@@ -89,6 +120,10 @@ pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
         }
         ("save_passwords", Value::Bool(on)) => settings.save_passwords = *on,
         ("autofill", Value::Bool(on)) => settings.autofill = *on,
+        ("sidebar_right", Value::Bool(on)) => settings.sidebar_right = *on,
+        ("accent", Value::String(id)) if ACCENTS.iter().any(|(key, ..)| key == id) => {
+            settings.accent = id.clone()
+        }
         _ => return Err(format!("Unknown setting: {key}")),
     }
     let bytes = serde_json::to_vec_pretty(&settings).map_err(|error| error.to_string())?;
@@ -110,6 +145,8 @@ mod tests {
         assert!(settings.ad_blocker && settings.auto_update && settings.save_history);
         assert_eq!(settings.tracking_prevention, "balanced");
         assert!(!settings.save_passwords && settings.autofill);
+        assert_eq!(settings.accent, "neutral");
+        assert!(!settings.sidebar_right);
     }
 
     #[test]
@@ -118,6 +155,7 @@ mod tests {
         assert!(set("tracking_prevention", &Value::String("none".into())).is_err());
         assert!(set("save_passwords", &Value::String("yes".into())).is_err());
         assert!(set("nope", &Value::Bool(true)).is_err());
+        assert!(set("accent", &Value::String("red;}*{x".into())).is_err());
         assert!(set("ad_blocker", &Value::String("yes".into())).is_err());
     }
 }
