@@ -741,9 +741,9 @@ pub fn attach(
 ) -> wry::Result<()> {
     use webview2_com::{
         AcceleratorKeyPressedEventHandler, BytesReceivedChangedEventHandler,
-        DownloadStartingEventHandler, FaviconChangedEventHandler, FocusChangedEventHandler,
-        HistoryChangedEventHandler, IsDocumentPlayingAudioChangedEventHandler,
-        IsMutedChangedEventHandler,
+        ContainsFullScreenElementChangedEventHandler, DownloadStartingEventHandler,
+        FaviconChangedEventHandler, FocusChangedEventHandler, HistoryChangedEventHandler,
+        IsDocumentPlayingAudioChangedEventHandler, IsMutedChangedEventHandler,
         Microsoft::Web::WebView2::Win32::{
             COREWEBVIEW2_DOWNLOAD_STATE, COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED,
             COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS, COREWEBVIEW2_KEY_EVENT_KIND,
@@ -966,6 +966,22 @@ pub fn attach(
         webview.add_ProcessFailed(
             &ProcessFailedEventHandler::create(Box::new(move |_, _| {
                 let _ = crashed.send_event(UserEvent::Crashed(id, generation));
+                Ok(())
+            })),
+            &mut token,
+        )?;
+        let fullscreen = proxy.clone();
+        webview.add_ContainsFullScreenElementChanged(
+            &ContainsFullScreenElementChangedEventHandler::create(Box::new(move |view, _| {
+                if let Some(view) = view {
+                    let mut contains = BOOL::default();
+                    view.ContainsFullScreenElement(&mut contains)?;
+                    let _ = fullscreen.send_event(UserEvent::ContentFullscreen(
+                        id,
+                        generation,
+                        contains.as_bool(),
+                    ));
+                }
                 Ok(())
             })),
             &mut token,

@@ -18,6 +18,7 @@ from native_cache import check_cache_recovery
 from tab_recovery import check_recovery
 from tab_input import check_tab_input
 from update_restore import check_update_restore
+from content_fullscreen import check_content_fullscreen
 from topbar_animation import check_topbar_animation
 
 
@@ -127,6 +128,7 @@ def main():
     check_tab_input(args.exe)
     check_recovery(args.exe)
     check_update_restore(args.exe)
+    check_content_fullscreen(args.exe)
     app = NativeApp(args.exe, 'native-regressions')
     artifacts, profile = app.artifacts, app.profile
     port, content_port = app.port, app.content_port
