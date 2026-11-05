@@ -28,13 +28,10 @@ fn has_option(args: &[String], option: &str) -> bool {
 fn main() -> wry::Result<()> {
     #[cfg(windows)]
     {
-        #[link(name = "shell32")]
-        unsafe extern "system" {
-            fn SetCurrentProcessExplicitAppUserModelID(app_id: *const u16) -> i32;
-        }
-        let app_id: Vec<u16> = "Veluno.Browser\0".encode_utf16().collect();
-        // Windows copies the ID during this call.
-        unsafe { SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr()) };
+        use windows::{Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID, core::w};
+        // SAFETY: `w!` is a static, NUL-terminated wide string, and Windows copies the ID during the call.
+        // Only taskbar grouping depends on it, so a failure is ignored.
+        let _ = unsafe { SetCurrentProcessExplicitAppUserModelID(w!("Veluno.Browser")) };
     }
     let args: Vec<String> = std::env::args().collect();
     if has_option(&args, "--check-update") {

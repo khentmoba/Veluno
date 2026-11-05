@@ -136,6 +136,8 @@ pub fn is_low_end_device() -> bool {
         dwLength: u32::try_from(std::mem::size_of::<MEMORYSTATUSEX>()).unwrap_or(0),
         ..Default::default()
     };
+    // SAFETY: `status.dwLength` is set to the struct's size, as the API requires.
+    // `status` is a valid, writable out-parameter.
     if unsafe { GlobalMemoryStatusEx(&mut status) }.is_ok() {
         // Less than or equal to 4GB RAM or less than 512MB available physical memory
         status.ullTotalPhys <= 4 * 1024 * 1024 * 1024 || status.ullAvailPhys <= 512 * 1024 * 1024

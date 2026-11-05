@@ -6,7 +6,6 @@ use serde::Deserialize;
 use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
-    hash::BuildHasher,
     rc::Rc,
 };
 use tao::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
@@ -764,7 +763,8 @@ fn content(
     popup_host: &PopupHost,
     fresh: bool,
 ) -> wry::Result<WebView> {
-    let generation = std::collections::hash_map::RandomState::new().hash_one(id);
+    static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let private = state.is_private(id);
     let tab = state
         .tabs
@@ -2029,16 +2029,16 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             },
                             Command::OpenExtensionsFolder => {
                                 let _ = std::fs::create_dir_all(extensions::directory());
-                                if let Err(error) = std::process::Command::new("explorer.exe").arg(extensions::directory()).spawn() { state.update_status = Some(format!("Could not open the extensions folder: {error}")); }
+                                if let Err(error) = std::process::Command::new(updater::system_binary("explorer.exe")).arg(extensions::directory()).spawn() { state.update_status = Some(format!("Could not open the extensions folder: {error}")); }
                             },
                             Command::Zoom { delta } => if let Some(view) = views.get(&state.active_tab_id) {
                                 let current = i32::try_from(zooms.get(&state.active_tab_id).copied().unwrap_or(100)).unwrap_or(100);
-                                let next = u32::try_from(if delta == 0 { 100 } else { (current + delta).clamp(30, 300) }).unwrap_or(100);
+                                let next = u32::try_from(if delta == 0 { 100 } else { current.saturating_add(delta).clamp(30, 300) }).unwrap_or(100);
                                 if view.zoom(f64::from(next) / 100.).is_ok() { zooms.insert(state.active_tab_id, next); }
                             },
                             Command::Print => if let Some(view) = views.get(&state.active_tab_id) { let _ = view.print(); },
                             Command::Exit => if may_exit(&state, &session) { *flow = ControlFlow::Exit; },
-                            Command::DefaultBrowser => { if let Err(error) = std::process::Command::new("explorer.exe").arg("ms-settings:defaultapps").spawn() { state.update_status = Some(format!("Could not open Windows default apps: {error}")); } },
+                            Command::DefaultBrowser => { if let Err(error) = std::process::Command::new(updater::system_binary("explorer.exe")).arg("ms-settings:defaultapps").spawn() { state.update_status = Some(format!("Could not open Windows default apps: {error}")); } },
                             Command::DismissUpdate { version } => { if version.len() <= 100 { state.dismissed_update_version = Some(version); } },
                             Command::CheckUpdates => if !check_busy {
                                 check_busy = true; state.dismissed_update_version = None; state.update_status = Some("Checking for updates…".into());

@@ -18,8 +18,9 @@ pub struct Entry {
 
 static DIRTY: AtomicBool = AtomicBool::new(false);
 
+static LOG: OnceLock<Mutex<Vec<Entry>>> = OnceLock::new();
+
 fn log() -> MutexGuard<'static, Vec<Entry>> {
-    static LOG: OnceLock<Mutex<Vec<Entry>>> = OnceLock::new();
     LOG.get_or_init(|| {
         let loaded = std::fs::read_to_string(path())
             .ok()
@@ -45,6 +46,10 @@ fn now() -> u64 {
 
 /// Writes the log if it changed; the maintenance thread calls this so visits never block on disk.
 pub fn flush() {
+    flush_with(|bytes| profile::write_atomic(&path(), bytes));
+}
+
+fn flush_with(write: impl FnOnce(&[u8]) -> std::io::Result<()>) {
     static WRITING: Mutex<()> = Mutex::new(());
     let _writing = WRITING
         .lock()
@@ -52,8 +57,10 @@ pub fn flush() {
     if !DIRTY.swap(false, Ordering::AcqRel) {
         return;
     }
-    if let Ok(bytes) = serde_json::to_vec(&*log())
-        && profile::write_atomic(&path(), &bytes).is_err()
+    // Serialize under the log lock, then write after the guard is released.
+    let bytes = serde_json::to_vec(&*log());
+    if let Ok(bytes) = bytes
+        && write(&bytes).is_err()
     {
         DIRTY.store(true, Ordering::Release);
     }
@@ -212,6 +219,18 @@ mod tests {
         let restored: Vec<Entry> =
             serde_json::from_slice(&serde_json::to_vec(&entries).unwrap()).unwrap();
         assert_eq!(restored, entries);
+    }
+
+    #[test]
+    fn flush_releases_the_log_before_writing() {
+        LOG.get_or_init(|| Mutex::new(Vec::new()));
+        changed();
+        let mut visits_could_proceed = false;
+        flush_with(|_| {
+            visits_could_proceed = LOG.get().is_some_and(|log| log.try_lock().is_ok());
+            Ok(())
+        });
+        assert!(visits_could_proceed);
     }
 
     #[test]
