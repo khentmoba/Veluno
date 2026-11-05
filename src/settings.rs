@@ -78,15 +78,17 @@ fn path() -> std::path::PathBuf {
 pub fn get() -> Settings {
     current()
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .expect("settings mutex should never be poisoned")
         .clone()
 }
 
 pub fn engine() -> (&'static str, &'static str) {
-    let id = get().search_engine;
+    let settings = current()
+        .lock()
+        .expect("settings mutex should never be poisoned");
     let (_, name, url) = ENGINES
         .iter()
-        .find(|(key, ..)| *key == id)
+        .find(|(key, ..)| *key == settings.search_engine)
         .unwrap_or(&ENGINES[0]);
     (name, url)
 }
@@ -95,15 +97,17 @@ pub fn engine() -> (&'static str, &'static str) {
 pub fn sidebar_right() -> bool {
     current()
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .expect("settings mutex should never be poisoned")
         .sidebar_right
 }
 
 pub fn accent() -> &'static str {
-    let id = get().accent;
+    let settings = current()
+        .lock()
+        .expect("settings mutex should never be poisoned");
     ACCENTS
         .iter()
-        .find(|(key, ..)| *key == id)
+        .find(|(key, ..)| *key == settings.accent)
         .unwrap_or(&ACCENTS[0])
         .2
 }
@@ -112,7 +116,7 @@ pub fn data_saver() -> bool {
     std::env::var_os("VELUNO_DATA_SAVER").is_some()
         || current()
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("settings mutex should never be poisoned")
             .data_saver
 }
 
@@ -120,7 +124,7 @@ pub fn performance_mode() -> bool {
     std::env::var_os("VELUNO_PERFORMANCE_MODE").is_some()
         || current()
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("settings mutex should never be poisoned")
             .performance_mode
         || is_low_end_device()
 }
@@ -129,7 +133,7 @@ pub fn performance_mode() -> bool {
 pub fn is_low_end_device() -> bool {
     use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
     let mut status = MEMORYSTATUSEX {
-        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        dwLength: u32::try_from(std::mem::size_of::<MEMORYSTATUSEX>()).unwrap_or(0),
         ..Default::default()
     };
     if unsafe { GlobalMemoryStatusEx(&mut status) }.is_ok() {
@@ -149,7 +153,7 @@ pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
     let mut settings = get();
     match (key, value) {
         ("search_engine", Value::String(id)) if ENGINES.iter().any(|(key, ..)| key == id) => {
-            settings.search_engine = id.clone()
+            settings.search_engine.clone_from(id);
         }
         ("ad_blocker", Value::Bool(on)) => settings.ad_blocker = *on,
         ("auto_update", Value::Bool(on)) => settings.auto_update = *on,
@@ -157,7 +161,7 @@ pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
         ("tracking_prevention", Value::String(level))
             if TRACKING_LEVELS.contains(&level.as_str()) =>
         {
-            settings.tracking_prevention = level.clone()
+            settings.tracking_prevention.clone_from(level);
         }
         ("save_passwords", Value::Bool(on)) => settings.save_passwords = *on,
         ("autofill", Value::Bool(on)) => settings.autofill = *on,
@@ -165,15 +169,16 @@ pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
         ("data_saver", Value::Bool(on)) => settings.data_saver = *on,
         ("performance_mode", Value::Bool(on)) => settings.performance_mode = *on,
         ("accent", Value::String(id)) if ACCENTS.iter().any(|(key, ..)| key == id) => {
-            settings.accent = id.clone()
+            settings.accent.clone_from(id);
         }
         _ => return Err(format!("Unknown setting: {key}")),
     }
     let bytes = serde_json::to_vec_pretty(&settings).map_err(|error| error.to_string())?;
     crate::profile::write_atomic(&path(), &bytes).map_err(|error| error.to_string())?;
-    *current()
+    current()
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = settings.clone();
+        .expect("settings mutex should never be poisoned")
+        .clone_from(&settings);
     Ok(settings)
 }
 

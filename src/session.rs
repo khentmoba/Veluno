@@ -98,7 +98,7 @@ mod tests {
         let writer = SessionWriter::at(path.clone(), |_| {});
         assert!(writer.flush(&BrowserState::new()).is_err());
         drop(writer);
-        std::fs::remove_file(path.with_extension("tmp")).unwrap();
+        assert!(!profile::temporary_path(&path).exists());
         std::fs::remove_dir(path).unwrap();
         std::fs::remove_dir(directory).unwrap();
     }

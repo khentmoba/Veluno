@@ -2,7 +2,10 @@ use crate::{app::UserEvent, desktop, state::BrowserState};
 use serde::Deserialize;
 use std::{cell::RefCell, collections::VecDeque};
 use tao::{event_loop::EventLoopProxy, window::Window};
-use webview2_com::Microsoft::Web::WebView2::Win32::*;
+use webview2_com::Microsoft::Web::WebView2::Win32::{
+    COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY, ICoreWebView2Deferral,
+    ICoreWebView2PermissionRequestedEventArgs, ICoreWebView2PermissionRequestedEventArgs3,
+};
 use windows::core::Interface;
 use wry::{PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder};
 

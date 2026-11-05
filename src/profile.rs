@@ -27,17 +27,27 @@ fn migrate_directory(base: &Path) -> PathBuf {
     current
 }
 
+pub(crate) fn temporary_path(path: &Path) -> PathBuf {
+    let mut temporary = path.as_os_str().to_owned();
+    temporary.push(".tmp");
+    PathBuf::from(temporary)
+}
+
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let temporary = path.with_extension("tmp");
+    let temporary = temporary_path(path);
     let mut file = std::fs::File::create(&temporary)?;
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);
-    std::fs::rename(temporary, path)
+    let result = std::fs::rename(&temporary, path);
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
 }
 
 pub fn allowed_url(value: &str) -> bool {
@@ -179,7 +189,11 @@ mod tests {
         write_atomic(&path, b"first").unwrap();
         write_atomic(&path, b"second").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"second");
-        assert!(!path.with_extension("tmp").exists());
+        assert!(!temporary_path(&path).exists());
+        assert_ne!(
+            temporary_path(&directory.join("session.json")),
+            temporary_path(&directory.join("session.bak"))
+        );
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(directory).unwrap();
     }
