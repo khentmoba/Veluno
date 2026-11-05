@@ -83,6 +83,12 @@ select { font:inherit; font-size:13px; color:var(--text); background:var(--activ
 <div class="row"><div><h2>Site permissions</h2><p>Camera, microphone, location, notifications, and clipboard-read requests always ask first and name the site. Other requests are denied.</p></div><span class="pill ok">Always on</span></div>
 </section>
 
+<section data-section="performance" data-label="Performance" data-icon="M13 2L3 14h9l-1 8 10-12h-9l1-8z">
+<div class="row"><div><h2>Data Saver</h2><p>Conserves data on slow, limited, or metered connections. Sends Save-Data headers, requests compressed images, and blocks background telemetry pings.</p></div><button class="switch" role="switch" id="data-saver" aria-label="Data Saver"></button></div>
+<div class="row"><div><h2>Performance mode</h2><p>Optimizes rendering for low-spec, older, or laggy hardware. Enables low-end device mode, aggressively trims background tab memory, and prioritizes smooth compositor scrolling.</p></div><button class="switch" role="switch" id="performance-mode" aria-label="Performance mode"></button></div>
+<p class="note">Veluno also automatically detects memory-constrained hardware to keep browsing responsive.</p>
+</section>
+
 <section data-section="extensions" data-label="Extensions" data-icon="M10 4h4v3h3a1 1 0 0 1 1 1v3h-3v2h3v3a1 1 0 0 1-1 1h-3v-3h-2v3H8a1 1 0 0 1-1-1v-3h3v-2H7V8a1 1 0 0 1 1-1h2z">
 <div class="row"><div><h2>uBlock Origin</h2><p id="ublock-detail"></p></div><span class="pill" id="ublock-pill"></span><button class="btn" id="ublock-action" data-send="install_ad_blocker" hidden>Install</button></div>
 <div class="row"><div><h2>More extensions</h2><p>Veluno loads any unpacked Chromium extension folder placed in:<br><code id="extensions-folder"></code><br>Restart Veluno after adding one.</p></div><button class="btn" data-send="open_extensions_folder">Open folder</button></div>
@@ -153,6 +159,7 @@ function toggle(id,key) {
 }
 toggle('auto-update','auto_update'); toggle('ad-blocker','ad_blocker'); toggle('save-history','save_history');
 toggle('save-passwords','save_passwords'); toggle('autofill','autofill'); toggle('sidebar-right','sidebar_right');
+toggle('data-saver','data_saver'); toggle('performance-mode','performance_mode');
 const tracking=[['basic','Basic','Blocks harmful trackers only. Most sites work as usual.'],['balanced','Balanced','Also blocks trackers from sites you have not visited. Recommended.'],['strict','Strict','Blocks most trackers across sites. Some pages may not work properly.']];
 function renderTracking() {
  $('tracking').replaceChildren(...tracking.map(([id,name])=>{

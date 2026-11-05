@@ -303,6 +303,8 @@ pub fn show(view: &WebView, visible: bool) {
                     view.SetMemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL);
             }
         }
+    } else if crate::settings::performance_mode() {
+        trim_memory(view);
     }
 }
 
@@ -1064,6 +1066,21 @@ fn block_ads(
                         )),
                     )?;
                 }
+                if crate::settings::data_saver() {
+                    let data_saver_script = "try{if(navigator.connection){Object.defineProperty(navigator.connection,'saveData',{get:()=>true,configurable:true});}}catch(_){}";
+                    let added = scripts.clone();
+                    view.AddScriptToExecuteOnDocumentCreated(
+                        &HSTRING::from(data_saver_script),
+                        &AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(
+                            move |result, id| {
+                                if result.is_ok() {
+                                    added.borrow_mut().push(id);
+                                }
+                                Ok(())
+                            },
+                        )),
+                    )?;
+                }
                 *navigating.borrow_mut() = uri;
                 Ok(())
             })),
@@ -1074,6 +1091,33 @@ fn block_ads(
                 let Some(args) = args else { return Ok(()) };
                 let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT::default();
                 args.ResourceContext(&mut context)?;
+                let data_saver = crate::settings::data_saver();
+                if let Ok(request) = args.Request()
+                    && data_saver
+                    && let Ok(headers) = request.Headers()
+                {
+                    let _ =
+                        headers.SetHeader(windows::core::w!("Save-Data"), windows::core::w!("on"));
+                    let _ = headers.SetHeader(
+                        windows::core::w!("Sec-CH-Save-Data"),
+                        windows::core::w!("?1"),
+                    );
+                    let _ = headers.SetHeader(
+                        windows::core::w!("Sec-CH-Prefers-Reduced-Data"),
+                        windows::core::w!("1"),
+                    );
+                }
+                // Under Data Saver mode, shed background beacon and ping requests immediately to conserve bandwidth.
+                if data_saver && context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING {
+                    let response = environment.CreateWebResourceResponse(
+                        None,
+                        204,
+                        w!("No Content"),
+                        w!(""),
+                    )?;
+                    args.SetResponse(&response)?;
+                    return Ok(());
+                }
                 // Documents load untouched; uBlock Origin already blocks ad frames.
                 if context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT {
                     return Ok(());
