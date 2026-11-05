@@ -86,7 +86,10 @@ pub fn is_newer(remote: &str, current: &str) -> bool {
 }
 
 pub(crate) fn run_curl(args: &[&str]) -> Option<String> {
-    let output = hidden_command("curl.exe").args(args).output().ok()?;
+    let output = hidden_command(system_binary("System32\\curl.exe"))
+        .args(args)
+        .output()
+        .ok()?;
     if output.status.success() {
         String::from_utf8(output.stdout).ok()
     } else {
@@ -185,7 +188,7 @@ pub fn download_and_apply_update(download_url: &str) -> Result<(), String> {
 }
 
 pub(crate) fn download(url: &str, file: &std::path::Path) -> Result<(), String> {
-    let status = hidden_command("curl.exe")
+    let status = hidden_command(system_binary("System32\\curl.exe"))
         .args([
             "-s",
             "-f",
@@ -250,7 +253,7 @@ fn verify_download(sums_url: &str, asset: &str, file: &std::path::Path) -> Resul
 }
 
 pub(crate) fn sha256(file: &std::path::Path) -> Result<String, String> {
-    let output = hidden_command("certutil.exe")
+    let output = hidden_command(system_binary("System32\\certutil.exe"))
         .args([
             "-hashfile",
             file.to_str().ok_or("Invalid temp path")?,
@@ -306,7 +309,13 @@ fn replace_and_launch(
     Ok(())
 }
 
-pub(crate) fn hidden_command(program: &str) -> Command {
+/// A Windows program under `%SystemRoot%`. A bare name could resolve to a file in the working directory.
+pub(crate) fn system_binary(relative: &str) -> std::path::PathBuf {
+    let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+    std::path::Path::new(&root).join(relative)
+}
+
+pub(crate) fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let mut command = Command::new(program);
     #[cfg(windows)]
     {
@@ -402,6 +411,31 @@ mod tests {
         ] {
             assert!(validate_download_url(address).is_err(), "{address}");
         }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn system_tools_resolve_to_windows_binaries() {
+        for tool in [
+            "System32\\curl.exe",
+            "System32\\certutil.exe",
+            "System32\\tar.exe",
+            "explorer.exe",
+        ] {
+            assert!(system_binary(tool).is_file(), "{tool}");
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn sha256_matches_the_known_digest_through_certutil() {
+        let file = std::env::temp_dir().join(format!("veluno-sha256-{}", std::process::id()));
+        std::fs::write(&file, b"abc").unwrap();
+        let digest = sha256(&file);
+        std::fs::remove_file(&file).unwrap();
+        assert!(digest.unwrap().eq_ignore_ascii_case(
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        ));
     }
 
     #[test]

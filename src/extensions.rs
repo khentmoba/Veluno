@@ -304,10 +304,7 @@ fn download_ublock(target: &Path, installed: Option<String>) -> Result<bool, Str
         if !updater::sha256(&zip)?.eq_ignore_ascii_case(expected) {
             return Err("The ad blocker download did not match its checksum.".to_string());
         }
-        let tar = Path::new(&std::env::var_os("SystemRoot").unwrap_or("C:\\Windows".into()))
-            .join("System32")
-            .join("tar.exe");
-        let status = updater::hidden_command(tar.to_str().unwrap_or("tar.exe"))
+        let status = updater::hidden_command(updater::system_binary("System32\\tar.exe"))
             .arg("-xf")
             .arg(&zip)
             .arg("-C")

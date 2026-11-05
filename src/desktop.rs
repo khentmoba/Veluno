@@ -61,6 +61,8 @@ unsafe fn refresh_download(
     };
     let mut info = info.borrow_mut();
     let mut path = windows::core::PWSTR::null();
+    // SAFETY: `DOWNLOADS` is thread-local, so this COM object is used only on the UI thread that created it.
+    // Each out-parameter points to a live local, and `info` is borrowed for the call.
     unsafe {
         operation.ResultFilePath(&mut path)?;
         info.path = webview2_com::take_pwstr(path);
@@ -96,6 +98,8 @@ pub fn cancel_download(id: usize) -> Result<(), String> {
             .iter()
             .find(|(item, _)| *item == id)
             .ok_or("This download is no longer active.")?;
+        // SAFETY: `CANCELLABLE_DOWNLOADS` is thread-local, so `operation` is alive and used only on the UI thread.
+        // `Cancel` takes no pointers, and the borrow of `operation` lasts for the call.
         unsafe {
             operation
                 .Cancel()
@@ -118,7 +122,7 @@ pub fn open_download(id: usize) -> Result<(), String> {
     if !std::path::Path::new(&item.path).exists() {
         return Err("The downloaded file was moved or deleted.".into());
     }
-    std::process::Command::new("explorer.exe")
+    std::process::Command::new(crate::updater::system_binary("explorer.exe"))
         .arg(&item.path)
         .spawn()
         .map_err(|error| format!("Could not open the downloaded file: {error}"))?;
@@ -136,7 +140,7 @@ pub fn reveal_download(id: usize) -> Result<(), String> {
                         && item.received >= item.total))
         })
         .ok_or("This download is not complete yet.")?;
-    std::process::Command::new("explorer.exe")
+    std::process::Command::new(crate::updater::system_binary("explorer.exe"))
         .args(["/select,", &item.path])
         .spawn()
         .map_err(|error| format!("Could not show the downloaded file: {error}"))?;
@@ -153,6 +157,8 @@ pub fn download_counts(
             COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED, COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS,
             COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED,
         };
+        // SAFETY: Every entry in `DOWNLOADS` is a COM object owned by this UI thread (thread-local storage).
+        // The calls write only to locals and to `info`, which is borrowed for the call.
         downloads.retain(|(id, operation, info)| unsafe {
             if !views.contains_key(id) {
                 return false;
@@ -187,6 +193,8 @@ pub fn download_counts(
             true
         });
     });
+    // SAFETY: `CANCELLABLE_DOWNLOADS` is thread-local, so these COM objects stay on the UI thread that created them.
+    // Every out-parameter is a local that outlives the call.
     CANCELLABLE_DOWNLOADS.with_borrow_mut(|items| items.retain(|(_, operation)| unsafe {
         let mut state = webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_DOWNLOAD_STATE::default();
         let mut received = 0;
@@ -213,6 +221,8 @@ pub fn is_default_browser() -> bool {
         };
         [w!("http"), w!("https")]
             .into_iter()
+            // SAFETY: `value` is a 256-element buffer, and `length` holds its size in characters, as `AssocQueryStringW` requires.
+            // `protocol` is a static string.
             .all(|protocol| unsafe {
                 let mut value = [0u16; 256];
                 let mut length = u32::try_from(value.len()).unwrap_or(u32::MAX);
@@ -252,6 +262,8 @@ fn stack(view: &WebView, above: Option<&WebView>) {
             HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
         };
         use wry::WebViewExtWindows;
+        // SAFETY: `view` and `above` are borrowed for the call, so their windows are alive.
+        // Window calls are made on the UI thread that created them.
         unsafe {
             let _ = SetWindowPos(
                 view.hwnd(),
@@ -272,6 +284,7 @@ fn stack(view: &WebView, above: Option<&WebView>) {
 
 pub fn vsync() {
     #[cfg(windows)]
+    // SAFETY: `DwmFlush` takes no arguments and only waits for the next compositor frame.
     unsafe {
         if windows::Win32::Graphics::Dwm::DwmFlush().is_ok() {
             return;
@@ -285,6 +298,8 @@ pub fn round(view: &WebView, width: i32, height: i32, radius: i32) {
     {
         use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, SetWindowRgn};
         use wry::WebViewExtWindows;
+        // SAFETY: `view.hwnd()` is alive for the call. `SetWindowRgn` takes ownership of `region` on success,
+        // so it is deleted here only when that call fails.
         unsafe {
             let region = (radius > 0)
                 .then(|| CreateRoundRectRgn(0, 0, width + 1, height + 1, radius * 2, radius * 2));
@@ -306,6 +321,8 @@ pub fn show(view: &WebView, visible: bool) {
     let _ = view.set_visible(visible);
     #[cfg(windows)]
     if visible {
+        // SAFETY: `view.webview()` is borrowed for the call. `cast` returns an error rather than an interface
+        // the runtime does not implement.
         unsafe {
             use webview2_com::Microsoft::Web::WebView2::Win32::{
                 COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL, ICoreWebView2_19,
@@ -325,6 +342,8 @@ pub fn show(view: &WebView, visible: bool) {
 /// Trims a background tab's renderer memory after an idle duration.
 pub fn trim_memory(view: &WebView) {
     #[cfg(windows)]
+    // SAFETY: `view.webview()` is borrowed for the call. `cast` returns an error rather than an interface
+    // the runtime does not implement.
     unsafe {
         use webview2_com::Microsoft::Web::WebView2::Win32::{
             COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW, ICoreWebView2_19,
@@ -343,6 +362,8 @@ pub fn quiet(view: &WebView) -> bool {
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8;
     use windows::core::{BOOL, Interface};
     use wry::WebViewExtWindows;
+    // SAFETY: `view.webview()` is borrowed for the call. `cast` fails cleanly on older runtimes.
+    // `playing` is a local out-parameter.
     unsafe {
         let mut playing = BOOL::default();
         view.webview()
@@ -357,6 +378,8 @@ pub fn mute(view: &WebView, muted: bool) -> Result<(), String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8;
     use windows::core::Interface;
     use wry::WebViewExtWindows;
+    // SAFETY: `view.webview()` is borrowed for the call. `cast` fails cleanly on older runtimes, and the
+    // error is returned to the caller.
     unsafe {
         view.webview()
             .cast::<ICoreWebView2_8>()
@@ -381,6 +404,8 @@ pub fn apply_privacy(view: &WebView, settings: &crate::settings::Settings) -> Re
         _ => COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_BALANCED,
     };
     let webview = view.webview();
+    // SAFETY: `webview` is borrowed for the call. Each `cast` fails cleanly on older runtimes, and the
+    // closure's `?` returns that error.
     (|| unsafe {
         let options = webview.Settings()?.cast::<ICoreWebView2Settings4>()?;
         options.SetIsPasswordAutosaveEnabled(settings.save_passwords)?;
@@ -453,6 +478,8 @@ pub fn clear_browsing_data(
         .map_or(0., |elapsed| elapsed.as_secs_f64());
     let start = range_ms.map_or(0., |range| (now - range as f64 / 1000.).max(0.));
     let webview = view.webview();
+    // SAFETY: `webview` is borrowed for the call. Each `cast` fails cleanly on older runtimes.
+    // WebView2 invokes the completion handler, which owns `completed`, on this UI thread.
     (|| unsafe {
         webview
             .cast::<ICoreWebView2_13>()?
@@ -491,32 +518,43 @@ pub fn screenshot(
     let folder = pictures_folder().join("Veluno");
     std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
     let path = folder.join(screenshot_name(title));
-    unsafe {
-        let stream = SHCreateStreamOnFileEx(
+    // SAFETY: The `HSTRING` lives until the call returns, and the returned stream is owned here.
+    let stream = unsafe {
+        SHCreateStreamOnFileEx(
             &HSTRING::from(path.as_os_str()),
             (STGM_CREATE | STGM_WRITE | STGM_SHARE_DENY_WRITE).0,
             0,
             true,
             None,
         )
-        .map_err(|error| error.to_string())?;
-        let keep = stream.clone();
-        view.webview()
-            .CapturePreview(
-                COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
-                &stream,
-                &CapturePreviewCompletedHandler::create(Box::new(move |result| {
-                    // Closing the stream flushes the file before it is reported.
-                    drop(keep);
-                    if result.is_err() {
-                        let _ = std::fs::remove_file(&path);
-                    }
-                    completed(result.map(|_| path).map_err(|error| error.to_string()));
-                    Ok(())
-                })),
-            )
-            .map_err(|error| error.to_string())
     }
+    .map_err(|error| error.to_string())?;
+    let keep = stream.clone();
+    let cleanup = path.clone();
+    // SAFETY: `view` is borrowed for the call and `stream` is a live IStream. The completion handler
+    // owns its own clone of the stream and the path, and WebView2 invokes it on this UI thread.
+    let captured = unsafe {
+        view.webview().CapturePreview(
+            COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+            &stream,
+            &CapturePreviewCompletedHandler::create(Box::new(move |result| {
+                // Closing the stream flushes the file before it is reported.
+                drop(keep);
+                if result.is_err() {
+                    let _ = std::fs::remove_file(&path);
+                }
+                completed(result.map(|_| path).map_err(|error| error.to_string()));
+                Ok(())
+            })),
+        )
+    };
+    if let Err(error) = captured {
+        // The file already exists, so a capture that fails at once would leave an empty PNG behind.
+        drop(stream);
+        let _ = std::fs::remove_file(&cleanup);
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 fn pictures_folder() -> std::path::PathBuf {
@@ -524,6 +562,8 @@ fn pictures_folder() -> std::path::PathBuf {
         System::Com::CoTaskMemFree,
         UI::Shell::{FOLDERID_Pictures, KF_FLAG_DEFAULT, SHGetKnownFolderPath},
     };
+    // SAFETY: `SHGetKnownFolderPath` returns a buffer we own. It is read before the single
+    // `CoTaskMemFree`, and it is not used after that.
     unsafe {
         if let Ok(path) = SHGetKnownFolderPath(&FOLDERID_Pictures, KF_FLAG_DEFAULT, None) {
             let folder = path.to_string().ok().map(std::path::PathBuf::from);
@@ -540,6 +580,7 @@ fn pictures_folder() -> std::path::PathBuf {
 
 /// A Windows-safe file name stamped with local time, such as `Example 2026-10-22 14.05.09.png`.
 fn screenshot_name(title: &str) -> String {
+    // SAFETY: `GetLocalTime` takes no arguments and returns a plain struct by value.
     let time = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
     let stamp = [
         time.wYear,
@@ -644,6 +685,8 @@ fn devtools(
     use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
     use windows::core::HSTRING;
     use wry::WebViewExtWindows;
+    // SAFETY: `view.webview()` is borrowed for the call. The `HSTRING` arguments are temporaries that live
+    // until the call returns.
     unsafe {
         view.webview()
             .CallDevToolsProtocolMethod(
@@ -678,6 +721,8 @@ pub fn message(title: &str, text: &str, confirm: bool) -> bool {
         } else {
             MB_ICONINFORMATION
         };
+        // SAFETY: `text` and `title` are NUL-terminated UTF-16 buffers that live until the call returns.
+        // A `None` owner is allowed for a modal box on the current thread.
         unsafe { MessageBoxW(None, PCWSTR(text.as_ptr()), PCWSTR(title.as_ptr()), flags) == IDYES }
     }
     #[cfg(not(windows))]
@@ -722,6 +767,8 @@ pub fn attach(
     let history = proxy.clone();
     // Pages still load if the runtime is too old to filter requests.
     let _ = block_ads(&webview);
+    // SAFETY: `webview` is borrowed for the call. The handlers capture cloned proxies, not borrows, so they
+    // stay valid after this returns. Tokens are written to locals.
     unsafe {
         if let Ok(audio) = webview.cast::<ICoreWebView2_8>() {
             let playing_proxy = proxy.clone();
@@ -1103,10 +1150,13 @@ fn block_ads(
     if !adblock::enabled() {
         return Ok(());
     }
+    // SAFETY: `webview` is borrowed for the call, and `cast` fails cleanly on runtimes without `ICoreWebView2_2`.
     let environment = unsafe { webview.cast::<ICoreWebView2_2>()?.Environment()? };
     let page = Rc::new(RefCell::new(String::new()));
     let scripts = Rc::new(RefCell::new(Vec::<String>::new()));
     let mut token = 0;
+    // SAFETY: `webview` is borrowed for the call. Handlers capture `Rc` state that is used only on this UI thread.
+    // Tokens are written to a local out-parameter.
     unsafe {
         webview.AddWebResourceRequestedFilter(w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)?;
         let navigating = page.clone();
@@ -1268,6 +1318,8 @@ pub fn load_extensions(view: &WebView, directory: &std::path::Path) -> Result<()
     if unpacked.is_empty() {
         return Ok(());
     }
+    // SAFETY: `view.webview()` is borrowed for the call, and each `cast` fails cleanly on older runtimes.
+    // The handler clones `profile` rather than borrowing it, so it can outlive this call.
     unsafe {
         let profile = view
             .webview()
@@ -1348,6 +1400,8 @@ pub fn attach_popup(view: &WebView, proxy: EventLoopProxy<UserEvent>) -> wry::Re
     let webview = view.webview();
     let mut token = 0;
     let _ = block_ads(&webview);
+    // SAFETY: `webview` is borrowed for the call, and the handler owns a cloned proxy, not a borrow.
+    // The token is a local out-parameter.
     unsafe {
         let close = proxy.clone();
         webview.add_WindowCloseRequested(
@@ -1412,6 +1466,8 @@ pub fn downloads(view: &WebView) -> Result<(), String> {
         use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_9;
         use windows::core::Interface;
         use wry::WebViewExtWindows;
+        // SAFETY: `view.webview()` is borrowed for the call, and `cast` fails cleanly when the runtime lacks
+        // `ICoreWebView2_9`.
         unsafe {
             view.webview()
                 .cast::<ICoreWebView2_9>()
@@ -1430,6 +1486,7 @@ pub fn navigate(view: &WebView, backwards: bool) {
     #[cfg(windows)]
     {
         use wry::WebViewExtWindows;
+        // SAFETY: `view.webview()` is borrowed for the call. `GoBack` and `GoForward` take no pointers.
         unsafe {
             let _ = if backwards {
                 view.webview().GoBack()
@@ -1529,6 +1586,9 @@ mod tests {
             })
             .build(&window)
             .unwrap();
+        // SAFETY: The test created `view` on this thread and keeps it alive until the test ends.
+        // `cast` fails the test if the runtime lacks the interface, and the handler pushes only into the
+        // thread-local `DOWNLOADS` list.
         unsafe {
             view.webview()
                 .cast::<ICoreWebView2_4>()

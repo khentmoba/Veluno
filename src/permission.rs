@@ -38,6 +38,8 @@ impl Request {
 
     fn finish(&mut self, allow: bool, save: bool) {
         if let Some(deferral) = self.deferral.take() {
+            // SAFETY: `REQUESTS` is thread-local, so `args` and `deferral` are used only on the UI thread that received them.
+            // Finishing or dropping a request touches only those objects.
             unsafe {
                 if let Ok(args) = self
                     .args
@@ -79,6 +81,8 @@ pub fn request(
     proxy: EventLoopProxy<UserEvent>,
 ) -> windows::core::Result<()> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    // SAFETY: This runs in the WebView2 permission handler on the UI thread, so `args` is a live COM reference.
+    // `GetDeferral` keeps the event open until `Request::finish` completes it.
     unsafe {
         if let Ok(args) = args.cast::<ICoreWebView2PermissionRequestedEventArgs3>() {
             args.SetSavesInProfile(false)?;
