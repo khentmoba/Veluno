@@ -117,7 +117,7 @@ impl Prompt {
         window: &Window,
         context: &mut WebContext,
         proxy: EventLoopProxy<UserEvent>,
-        headless: bool,
+        _headless: bool,
     ) -> wry::Result<Self> {
         let loaded = proxy.clone();
         let mut builder = WebViewBuilder::new_with_web_context(context)
@@ -142,9 +142,10 @@ impl Prompt {
                     ));
                 }
             });
-        if headless && let Ok(arguments) = std::env::var("VELUNO_SMOKE_BROWSER_ARGUMENTS") {
+        #[cfg(windows)]
+        {
             use wry::WebViewBuilderExtWindows;
-            builder = builder.with_additional_browser_args(arguments);
+            builder = builder.with_additional_browser_args(crate::app::chrome_browser_arguments());
         }
         Ok(Self {
             view: builder.build_as_child(window)?,
