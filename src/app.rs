@@ -286,6 +286,24 @@ pub enum UserEvent {
     BrowsingDataCleared(Result<(), String>, &'static str),
     ScreenshotSaved(Result<std::path::PathBuf, String>),
     ReaderToggled(usize, String),
+    ContentFullscreen(usize, u64, bool),
+}
+
+/// Leaves HTML fullscreen for the tab that entered it. The window restores only if the app fullscreened it.
+fn leave_content_fullscreen(
+    window: &Window,
+    views: &HashMap<usize, WebView>,
+    content: &mut Option<(usize, bool)>,
+) {
+    let Some((id, owns_window)) = content.take() else {
+        return;
+    };
+    if owns_window {
+        window.set_fullscreen(None);
+    }
+    if let Some(view) = views.get(&id) {
+        let _ = view.evaluate_script("if (document.fullscreenElement) document.exitFullscreen()");
+    }
 }
 
 fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, Rect, Rect, Rect) {
@@ -1412,6 +1430,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut last_download_host = None;
     let mut check_busy = false;
     let mut zooms: HashMap<usize, u32> = HashMap::new();
+    // The tab whose page is in HTML fullscreen, and whether the app made the window fullscreen for it.
+    let mut content_fullscreen: Option<(usize, bool)> = None;
     let mut smoke = crate::smoke::Smoke::new();
     if smoke.is_some() {
         let proxy = proxy.clone();
@@ -1824,12 +1844,16 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 }
                             },
                             Command::ToggleFullscreen => {
-                                let next = if window.fullscreen().is_some() {
-                                    None
+                                if content_fullscreen.is_some() {
+                                    leave_content_fullscreen(&window, &views, &mut content_fullscreen);
                                 } else {
-                                    Some(Fullscreen::Borderless(None))
-                                };
-                                window.set_fullscreen(next);
+                                    let next = if window.fullscreen().is_some() {
+                                        None
+                                    } else {
+                                        Some(Fullscreen::Borderless(None))
+                                    };
+                                    window.set_fullscreen(next);
+                                }
                             },
                             Command::ExpandPopup { url } => {
                                 let target = if profile::allowed_url(&url) {
@@ -2131,6 +2155,16 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Err(error) => format!("Could not save a screenshot: {error}"),
                         });
                     },
+                    UserEvent::ContentFullscreen(id, generation, enabled) => {
+                        let current = id == state.active_tab_id && state.tabs.iter().any(|tab| tab.id == id && tab.generation == generation);
+                        if enabled && current && content_fullscreen.is_none() {
+                            let owns_window = window.fullscreen().is_none();
+                            if owns_window { window.set_fullscreen(Some(Fullscreen::Borderless(None))); }
+                            content_fullscreen = Some((id, owns_window));
+                        } else if !enabled && content_fullscreen.is_some_and(|(active, _)| active == id) {
+                            leave_content_fullscreen(&window, &views, &mut content_fullscreen);
+                        }
+                    },
                     UserEvent::ReaderToggled(id, result) => {
                         if id == state.active_tab_id && result.trim_matches('"') == "unavailable" {
                             state.update_status = Some("Reader view isn't available on this page. It works best on articles and blog posts.".into());
@@ -2154,6 +2188,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         downloads.retain(|id, count| *count > 0 || awake.contains(id));
         sleep_pending.retain(|(id, _)| views.contains_key(id));
         let active_id = state.active_tab_id;
+        if content_fullscreen.is_some_and(|(id, _)| id != active_id || !views.contains_key(&id)) {
+            leave_content_fullscreen(&window, &views, &mut content_fullscreen);
+        }
         if visible_id != Some(active_id)
             && let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == active_id)
             && tab.error.take().is_some()
@@ -2172,7 +2209,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                 Err(error) => { state.update_status = Some(format!("Could not open this tab: {error}")); }
             }
         }
-        let pair = state.split_pair();
+        let pair = state.split_pair().filter(|_| content_fullscreen.is_none());
         if let Some(partner) = pair.and_then(|_| state.split_partner())
             && let std::collections::hash_map::Entry::Vacant(entry) = views.entry(partner)
         {
@@ -2181,7 +2218,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                 Err(error) => { state.split = None; state.update_status = Some(format!("Could not open split view: {error}")); },
             }
         }
-        let pair = state.split_pair();
+        let pair = state.split_pair().filter(|_| content_fullscreen.is_none());
         zooms.retain(|id, _| views.contains_key(id));
         hidden_at.retain(|id, _| views.contains_key(id));
         state.zoom = zooms.get(&active_id).copied().unwrap_or(100);
@@ -2198,13 +2235,20 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             animating_flag.store(animating, std::sync::atomic::Ordering::Relaxed);
             if animating { frame_thread.thread().unpark(); }
         }
-        let (sidebar_bounds, content_bounds, overlay_bounds, topbar_bounds) = bounds(&window, &state, ease(side_progress), ease(top_progress));
+        let (mut sidebar_bounds, mut content_bounds, overlay_bounds, mut topbar_bounds) = bounds(&window, &state, ease(side_progress), ease(top_progress));
+        if content_fullscreen.is_some() {
+            // The page fills the window while it is fullscreen, so the browser chrome steps aside.
+            let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+            content_bounds = Rect { position: Position::Logical(LogicalPosition::new(0., 0.)), size: Size::Logical(size) };
+            sidebar_bounds = Rect { position: Position::Logical(LogicalPosition::new(0., 0.)), size: Size::Logical(LogicalSize::new(0., 0.)) };
+            topbar_bounds = sidebar_bounds;
+        }
         let _ = sidebar.set_bounds(sidebar_bounds);
         if tick {
             let _ = topbar.set_bounds(topbar_bounds);
             return;
         }
-        let content_bounds = match state.side_panel_url.clone().filter(|_| state.side_panel_open) {
+        let content_bounds = match state.side_panel_url.clone().filter(|_| state.side_panel_open && content_fullscreen.is_none()) {
             Some(url) => {
                 let (rest, panel_rect) = side_panel_bounds(content_bounds, window.scale_factor(), settings::sidebar_right());
                 if panel.as_ref().is_none_or(|(_, loaded)| loaded != &url) {
