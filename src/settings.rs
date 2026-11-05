@@ -38,6 +38,8 @@ pub struct Settings {
     pub autofill: bool,
     pub accent: String,
     pub sidebar_right: bool,
+    pub data_saver: bool,
+    pub performance_mode: bool,
 }
 
 impl Default for Settings {
@@ -52,6 +54,8 @@ impl Default for Settings {
             autofill: true,
             accent: "neutral".into(),
             sidebar_right: false,
+            data_saver: false,
+            performance_mode: false,
         }
     }
 }
@@ -104,6 +108,43 @@ pub fn accent() -> &'static str {
         .2
 }
 
+pub fn data_saver() -> bool {
+    std::env::var_os("VELUNO_DATA_SAVER").is_some()
+        || current()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .data_saver
+}
+
+pub fn performance_mode() -> bool {
+    std::env::var_os("VELUNO_PERFORMANCE_MODE").is_some()
+        || current()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .performance_mode
+        || is_low_end_device()
+}
+
+#[cfg(windows)]
+pub fn is_low_end_device() -> bool {
+    use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    let mut status = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        ..Default::default()
+    };
+    if unsafe { GlobalMemoryStatusEx(&mut status) }.is_ok() {
+        // Less than or equal to 4GB RAM or less than 512MB available physical memory
+        status.ullTotalPhys <= 4 * 1024 * 1024 * 1024 || status.ullAvailPhys <= 512 * 1024 * 1024
+    } else {
+        false
+    }
+}
+
+#[cfg(not(windows))]
+pub fn is_low_end_device() -> bool {
+    false
+}
+
 pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
     let mut settings = get();
     match (key, value) {
@@ -121,6 +162,8 @@ pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
         ("save_passwords", Value::Bool(on)) => settings.save_passwords = *on,
         ("autofill", Value::Bool(on)) => settings.autofill = *on,
         ("sidebar_right", Value::Bool(on)) => settings.sidebar_right = *on,
+        ("data_saver", Value::Bool(on)) => settings.data_saver = *on,
+        ("performance_mode", Value::Bool(on)) => settings.performance_mode = *on,
         ("accent", Value::String(id)) if ACCENTS.iter().any(|(key, ..)| key == id) => {
             settings.accent = id.clone()
         }
@@ -147,6 +190,8 @@ mod tests {
         assert!(!settings.save_passwords && settings.autofill);
         assert_eq!(settings.accent, "neutral");
         assert!(!settings.sidebar_right);
+        assert!(!settings.data_saver);
+        assert!(!settings.performance_mode);
     }
 
     #[test]
@@ -157,5 +202,7 @@ mod tests {
         assert!(set("nope", &Value::Bool(true)).is_err());
         assert!(set("accent", &Value::String("red;}*{x".into())).is_err());
         assert!(set("ad_blocker", &Value::String("yes".into())).is_err());
+        assert!(set("data_saver", &Value::String("true".into())).is_err());
+        assert!(set("performance_mode", &Value::String("true".into())).is_err());
     }
 }

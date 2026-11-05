@@ -377,11 +377,20 @@ fn side_panel_bounds(content: Rect, scale: f64, sidebar_right: bool) -> (Rect, R
 #[cfg(windows)]
 fn content_browser_arguments() -> String {
     let mut args = String::from(
-        "--enable-features=BackForwardCache,ParallelDownloading \
+        "--enable-features=BackForwardCache,ParallelDownloading,CanvasOopRasterization,IntensiveWakeUpThrottling,ThrottleDisplayNoneAndVisibilityHiddenCrossOriginIframes,CalculateNativeWinOcclusion,WebRtcHideLocalIpsWithMdns \
+         --disable-features=Translate,OptimizationHints,MediaRouter \
          --enable-gpu-rasterization \
          --enable-zero-copy \
-         --enable-smooth-scrolling",
+         --enable-smooth-scrolling \
+         --enable-hardware-overlays=\"single-fullscreen,single-on-top,underlay\" \
+         --disk-cache-size=1073741824 \
+         --media-cache-size=268435456 \
+         --disable-background-timer-throttling=false \
+         --disable-renderer-backgrounding=false",
     );
+    if crate::settings::performance_mode() {
+        args.push_str(" --enable-low-end-device-mode");
+    }
     if let Ok(extra) = std::env::var("VELUNO_SMOKE_CONTENT_BROWSER_ARGUMENTS") {
         args.push(' ');
         args.push_str(&extra);
@@ -391,7 +400,12 @@ fn content_browser_arguments() -> String {
 
 #[cfg(windows)]
 pub(crate) fn chrome_browser_arguments() -> String {
-    let mut args = String::from("--enable-gpu-rasterization --enable-smooth-scrolling");
+    let mut args = String::from(
+        "--enable-gpu-rasterization \
+         --enable-zero-copy \
+         --enable-smooth-scrolling \
+         --disable-features=Translate,OptimizationHints,MediaRouter",
+    );
     if let Ok(extra) = std::env::var("VELUNO_SMOKE_BROWSER_ARGUMENTS") {
         args.push(' ');
         args.push_str(&extra);
