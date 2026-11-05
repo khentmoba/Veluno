@@ -63,6 +63,12 @@ function row(entry,label,removeLabel,onRemove) {
      return new URL(item.url).hostname===site.hostname&&['https:','http:'].includes(new URL(item.favicon).protocol)?[item.favicon]:[];
     } catch { return []; }
    });
+   if(!sources.length) {
+    const knownHistory=(data.history||[]).find(item=>{
+     try { return item.favicon&&new URL(item.url).hostname===site.hostname&&['https:','http:'].includes(new URL(item.favicon).protocol); } catch { return false; }
+    });
+    if(knownHistory?.favicon) sources.push(knownHistory.favicon);
+   }
    const candidates=[...new Set([...sources,root])];
    const img=document.createElement('img'); img.alt=''; img.referrerPolicy='no-referrer'; img.loading='lazy'; img.style.opacity='0';
    img.onload=()=>{ img.style.opacity='1'; fallback.style.visibility='hidden'; };

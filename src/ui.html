@@ -421,7 +421,7 @@ function addressOptionIcon(option) {
    const site=new URL(option.url);
    if(['https:','http:'].includes(site.protocol)) {
     const root=site.origin+'/favicon.ico';
-    const known=[option,...(currentState.tabs||[]),...(currentState.shortcuts||[])].find(item=>{
+    const known=[option,...(currentState.tabs||[]),...(currentState.shortcuts||[]),...(addressHistory||[])].find(item=>{
      try { return item.favicon&&new URL(item.url).hostname===site.hostname&&['https:','http:'].includes(new URL(item.favicon).protocol); } catch { return false; }
     });
     const img=document.createElement('img'); img.alt=''; img.referrerPolicy='no-referrer'; img.hidden=true;

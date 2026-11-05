@@ -272,6 +272,15 @@ window.runChecks=async()=>{
  check('failed favicon leaves fallback visible',!nd.querySelector('.option-icon img')&&nd.querySelector('.option-icon svg').style.visibility!=='hidden');
  n.openNewTab({tabs:[{id:10,title:'Internal',url:'veluno://settings'}]},[]);
  check('internal pages do not request favicons',!nd.querySelector('.option-icon img'));
+ n.openNewTab({tabs:[],shortcuts:[]},[{title:'History site',url:site+'/visited',favicon:logo}]);
+ check('history suggestions without open tabs or shortcuts display saved favicons',nd.querySelector('.option-icon img')?.src===logo);
+ n.openNewTab({tabs:[],shortcuts:[]},[{title:'Retry site',url:site+'/broken',favicon:site+'/broken.png'}]);
+ const retryImage=nd.querySelector('.option-icon img');
+ check('history suggestion uses saved favicon initially',retryImage?.src===site+'/broken.png');
+ retryImage.dispatchEvent(new Event('error'));
+ check('failed palette favicon retries site root icon',retryImage.src===site+'/favicon.ico');
+ retryImage.dispatchEvent(new Event('error'));
+ check('failed root icon leaves fallback visible',!nd.querySelector('.option-icon img')&&nd.querySelector('.option-icon svg').style.visibility!=='hidden');
  nd.body.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));await settle();
  check('backdrop cancels',messages.at(-1).action==='dismiss_new_tab');
  n.openNewTab(structuredClone(fixtureState));
