@@ -136,6 +136,11 @@ pub enum Command {
         version: String,
     },
     CloseDownloads,
+    ToggleDownloads,
+    ClearDownloads,
+    OpenDownload {
+        id: usize,
+    },
     CancelDownload {
         id: usize,
     },
@@ -272,7 +277,7 @@ pub enum UserEvent {
     Favicon(usize, u64, String),
     DownloadsChanged,
     DownloadStarted(usize, u64, bool, Option<String>),
-    DownloadFinished(usize, u64, bool),
+    DownloadFinished(usize, u64, desktop::DownloadOutcome),
     UpdateChecked(Result<Option<updater::UpdateManifest>, String>),
     Status(String),
     UpdateFailed(String),
@@ -836,6 +841,7 @@ fn content(
                                 | Command::CycleTab { .. }
                                 | Command::SwitchProfile { .. }
                                 | Command::OpenDownloads
+                                | Command::ToggleDownloads
                                 | Command::OpenHistory
                                 | Command::Zoom { .. }
                                 | Command::ToggleFullscreen
@@ -1840,6 +1846,19 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             },
                             Command::CancelDownload { id } => { if let Err(error) = desktop::cancel_download(id) { state.update_status = Some(error); } },
                             Command::CloseDownloads => { state.downloads_open = false; },
+                            Command::ToggleDownloads => {
+                                if state.downloads_open {
+                                    state.downloads_open = false;
+                                } else {
+                                    state.sidebar_collapsed = false;
+                                    state.downloads_open = true;
+                                    let id = downloads.iter().find(|(_, count)| **count > 0).map(|(id,_)| *id)
+                                        .or(last_download_host.filter(|id| views.contains_key(id))).unwrap_or(state.active_tab_id);
+                                    if let Some(view) = views.get(&id) && let Err(error) = desktop::downloads(view) { state.update_status = Some(error); }
+                                }
+                            },
+                            Command::ClearDownloads => { desktop::clear_downloads(); },
+                            Command::OpenDownload { id } => { if let Err(error) = desktop::open_download(id) { state.update_status = Some(error); } },
                             Command::RevealDownload { id } => { if let Err(error) = desktop::reveal_download(id) { state.update_status = Some(error); } },
                             Command::OpenDownloads => {
                                 state.sidebar_collapsed = false;
@@ -1889,7 +1908,10 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             },
                             Command::InstallAdBlocker => { start_ad_blocker_install(&proxy); },
                             Command::ClearBrowsingData { range, kinds } => if let Some((range, label)) = clear_range(&range) {
-                                if kinds.history { history::clear_recent(range); }
+                                if kinds.history {
+                                    history::clear_recent(range);
+                                    desktop::clear_downloads();
+                                }
                                 let profile_data = kinds.site_data || kinds.cache || kinds.passwords;
                                 // Private tabs use a separate in-memory profile, so clear through a regular one.
                                 let regular = views.iter().find(|(id, _)| !state.is_private(**id)).map(|(_, view)| view);
@@ -1987,10 +2009,18 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             }
                         }
                     },
-                    UserEvent::DownloadFinished(id, _generation, success) => {
+                    UserEvent::DownloadFinished(id, _generation, outcome) => {
                         if state.tabs.iter().any(|tab| tab.id == id) || download_only.contains(&id) {
                             if views.contains_key(&id) { last_download_host = Some(id); }
-                            state.update_status = Some(if success { "Download complete. Open Downloads to view the file." } else { "Download interrupted. Open Downloads to retry or choose another location." }.into());
+                            state.update_status = Some(match outcome {
+                                desktop::DownloadOutcome::Completed => {
+                                    "Download complete. Open Downloads to view the file.".into()
+                                }
+                                desktop::DownloadOutcome::Cancelled => "Download cancelled.".into(),
+                                desktop::DownloadOutcome::Interrupted => {
+                                    "Download interrupted. Open Downloads to retry or choose another location.".into()
+                                }
+                            });
                         }
                     },
                     UserEvent::UpdateChecked(result) => { check_busy = false; match result {

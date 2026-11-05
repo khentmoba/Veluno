@@ -2,6 +2,13 @@ use crate::app::UserEvent;
 use tao::event_loop::EventLoopProxy;
 use wry::WebView;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadOutcome {
+    Completed,
+    Cancelled,
+    Interrupted,
+}
+
 #[cfg(windows)]
 type DownloadEntry = (
     usize,
@@ -35,6 +42,12 @@ pub fn download_items() -> Vec<DownloadInfo> {
     DOWNLOAD_ITEMS.with_borrow(|items| items.iter().map(|item| item.borrow().clone()).collect())
 }
 
+pub fn clear_downloads() {
+    DOWNLOAD_ITEMS.with_borrow_mut(|items| {
+        items.retain(|item| item.borrow().status == "downloading");
+    });
+}
+
 #[cfg(windows)]
 unsafe fn refresh_download(
     operation: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2DownloadOperation,
@@ -51,7 +64,9 @@ unsafe fn refresh_download(
         let mut state = COREWEBVIEW2_DOWNLOAD_STATE::default();
         operation.State(&mut state)?;
         info.status = if state == COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED
-            || (info.total > 0 && info.received >= info.total)
+            || (state == COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS
+                && info.total > 0
+                && info.received >= info.total)
         {
             "complete"
         } else if state == COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED {
@@ -84,10 +99,37 @@ pub fn cancel_download(id: usize) -> Result<(), String> {
     })
 }
 
+pub fn open_download(id: usize) -> Result<(), String> {
+    let item = download_items()
+        .into_iter()
+        .find(|item| {
+            item.id == id
+                && (item.status == "complete"
+                    || (item.status == "downloading"
+                        && item.total > 0
+                        && item.received >= item.total))
+        })
+        .ok_or("This download is not complete yet.")?;
+    if !std::path::Path::new(&item.path).exists() {
+        return Err("The downloaded file was moved or deleted.".into());
+    }
+    std::process::Command::new("explorer.exe")
+        .arg(&item.path)
+        .spawn()
+        .map_err(|error| format!("Could not open the downloaded file: {error}"))?;
+    Ok(())
+}
+
 pub fn reveal_download(id: usize) -> Result<(), String> {
     let item = download_items()
         .into_iter()
-        .find(|item| item.id == id && item.status == "complete")
+        .find(|item| {
+            item.id == id
+                && (item.status == "complete"
+                    || (item.status == "downloading"
+                        && item.total > 0
+                        && item.received >= item.total))
+        })
         .ok_or("This download is not complete yet.")?;
     std::process::Command::new("explorer.exe")
         .args(["/select,", &item.path])
@@ -116,7 +158,11 @@ pub fn download_counts(
             let mut total = 0;
             let _ = operation.BytesReceived(&mut received);
             let _ = operation.TotalBytesToReceive(&mut total);
-            if state == COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED || (total > 0 && received >= total) {
+            if state == COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED
+                || (state == COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS
+                    && total > 0
+                    && received >= total)
+            {
                 if let Some(info) = info {
                     info.borrow_mut().status = "complete".into();
                 }
@@ -884,8 +930,11 @@ pub fn attach(
                             }
                             let _ = progress.send_event(UserEvent::DownloadsChanged);
                             if finished {
-                                let _ = progress
-                                    .send_event(UserEvent::DownloadFinished(id, generation, true));
+                                let _ = progress.send_event(UserEvent::DownloadFinished(
+                                    id,
+                                    generation,
+                                    DownloadOutcome::Completed,
+                                ));
                             }
                             Ok(())
                         })),
@@ -905,11 +954,17 @@ pub fn attach(
                                     || complete_info.borrow().status == "complete")
                                     && !complete_finished.replace(true)
                                 {
+                                    let outcome = if complete_info.borrow().status == "cancelled" {
+                                        DownloadOutcome::Cancelled
+                                    } else if state == COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED
+                                        || complete_info.borrow().status == "complete"
+                                    {
+                                        DownloadOutcome::Completed
+                                    } else {
+                                        DownloadOutcome::Interrupted
+                                    };
                                     let _ = complete.send_event(UserEvent::DownloadFinished(
-                                        id,
-                                        generation,
-                                        state == COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED
-                                            || complete_info.borrow().status == "complete",
+                                        id, generation, outcome,
                                     ));
                                 }
                             }
@@ -1389,6 +1444,41 @@ mod tests {
         // WebView2 may still hold profile files while its child processes exit.
         let _ = std::fs::remove_dir_all(directory);
     }
+
+    #[test]
+    fn clear_downloads_removes_completed_and_preserves_active() {
+        DOWNLOAD_ITEMS.with_borrow_mut(|items| {
+            items.clear();
+            items.push(std::rc::Rc::new(std::cell::RefCell::new(DownloadInfo {
+                id: 1,
+                path: "C:\\test\\file1.txt".into(),
+                received: 100,
+                total: 100,
+                status: "complete".into(),
+            })));
+            items.push(std::rc::Rc::new(std::cell::RefCell::new(DownloadInfo {
+                id: 2,
+                path: "C:\\test\\file2.txt".into(),
+                received: 50,
+                total: 100,
+                status: "downloading".into(),
+            })));
+            items.push(std::rc::Rc::new(std::cell::RefCell::new(DownloadInfo {
+                id: 3,
+                path: "C:\\test\\file3.txt".into(),
+                received: 20,
+                total: 100,
+                status: "cancelled".into(),
+            })));
+        });
+        clear_downloads();
+        let items = download_items();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, 2);
+        assert_eq!(items[0].status, "downloading");
+        DOWNLOAD_ITEMS.with_borrow_mut(|items| items.clear());
+    }
+
     #[test]
     fn screenshot_names_are_safe_windows_file_names() {
         let stamp = [2026, 3, 7, 9, 5, 2];
