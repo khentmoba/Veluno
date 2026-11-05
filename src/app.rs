@@ -20,6 +20,8 @@ use wry::{NewWindowResponse, PageLoadEvent, Rect, WebContext, WebView, WebViewBu
 
 /// Hidden tabs past this sleep even under the live-WebView budget, releasing their renderer.
 const IDLE_SLEEP: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+/// Background tabs past this have their renderer memory trimmed.
+const MEMORY_TRIM_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -372,6 +374,31 @@ fn side_panel_bounds(content: Rect, scale: f64, sidebar_right: bool) -> (Rect, R
     (rect(content_x, rest), rect(panel_x, width))
 }
 
+#[cfg(windows)]
+fn content_browser_arguments() -> String {
+    let mut args = String::from(
+        "--enable-features=BackForwardCache,ParallelDownloading \
+         --enable-gpu-rasterization \
+         --enable-zero-copy \
+         --enable-smooth-scrolling",
+    );
+    if let Ok(extra) = std::env::var("VELUNO_SMOKE_CONTENT_BROWSER_ARGUMENTS") {
+        args.push(' ');
+        args.push_str(&extra);
+    }
+    args
+}
+
+#[cfg(windows)]
+pub(crate) fn chrome_browser_arguments() -> String {
+    let mut args = String::from("--enable-gpu-rasterization --enable-smooth-scrolling");
+    if let Ok(extra) = std::env::var("VELUNO_SMOKE_BROWSER_ARGUMENTS") {
+        args.push(' ');
+        args.push_str(&extra);
+    }
+    args
+}
+
 /// The docked side web panel. It shares the tab profile, so sign-ins carry over.
 fn side_panel(
     window: &Window,
@@ -408,11 +435,7 @@ fn side_panel(
     #[cfg(windows)]
     {
         use wry::WebViewBuilderExtWindows;
-        if std::env::var_os("VELUNO_SMOKE_TEST").is_some()
-            && let Ok(arguments) = std::env::var("VELUNO_SMOKE_CONTENT_BROWSER_ARGUMENTS")
-        {
-            builder = builder.with_additional_browser_args(arguments);
-        }
+        builder = builder.with_additional_browser_args(content_browser_arguments());
         if extensions::enabled_at_startup() {
             builder = builder.with_browser_extensions_enabled(true);
         }
@@ -593,10 +616,9 @@ fn open_popup(
             }
             NewWindowResponse::Deny
         });
-    if host.headless
-        && let Ok(arguments) = std::env::var("VELUNO_SMOKE_CONTENT_BROWSER_ARGUMENTS")
+    #[cfg(windows)]
     {
-        builder = builder.with_additional_browser_args(arguments);
+        builder = builder.with_additional_browser_args(content_browser_arguments());
     }
     let view = builder.build_as_child(&*host.window).ok()?;
     let _ = desktop::attach_popup(&view, proxy.clone());
@@ -681,11 +703,7 @@ fn open_glance(
     #[cfg(windows)]
     {
         use wry::WebViewBuilderExtWindows;
-        if host.headless
-            && let Ok(arguments) = std::env::var("VELUNO_SMOKE_CONTENT_BROWSER_ARGUMENTS")
-        {
-            builder = builder.with_additional_browser_args(arguments);
-        }
+        builder = builder.with_additional_browser_args(content_browser_arguments());
         if extensions::enabled_at_startup() {
             builder = builder.with_browser_extensions_enabled(true);
         }
@@ -856,12 +874,12 @@ fn content(
                 }
             }
         });
+    #[cfg(windows)]
+    {
+        use wry::WebViewBuilderExtWindows;
+        builder = builder.with_additional_browser_args(content_browser_arguments());
+    }
     if std::env::var_os("VELUNO_SMOKE_TEST").is_some() {
-        #[cfg(windows)]
-        if let Ok(arguments) = std::env::var("VELUNO_SMOKE_CONTENT_BROWSER_ARGUMENTS") {
-            use wry::WebViewBuilderExtWindows;
-            builder = builder.with_additional_browser_args(arguments);
-        }
         builder = builder.with_download_started_handler(|_, path| {
             *path = profile::directory().join("smoke-download.txt");
             true
@@ -1195,9 +1213,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         });
     #[cfg(windows)]
-    if headless && let Ok(arguments) = std::env::var("VELUNO_SMOKE_BROWSER_ARGUMENTS") {
+    {
         use wry::WebViewBuilderExtWindows;
-        sidebar_builder = sidebar_builder.with_additional_browser_args(arguments);
+        sidebar_builder = sidebar_builder.with_additional_browser_args(chrome_browser_arguments());
     }
     let sidebar = sidebar_builder.build_as_child(&*window)?;
     let palette_proxy = proxy.clone();
@@ -1226,9 +1244,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         });
     #[cfg(windows)]
-    if headless && let Ok(arguments) = std::env::var("VELUNO_SMOKE_BROWSER_ARGUMENTS") {
+    {
         use wry::WebViewBuilderExtWindows;
-        palette_builder = palette_builder.with_additional_browser_args(arguments);
+        palette_builder = palette_builder.with_additional_browser_args(chrome_browser_arguments());
     }
     let palette = palette_builder.build_as_child(&*window)?;
     let mut permission_prompt =
@@ -1259,9 +1277,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         });
     #[cfg(windows)]
-    if headless && let Ok(arguments) = std::env::var("VELUNO_SMOKE_BROWSER_ARGUMENTS") {
+    {
         use wry::WebViewBuilderExtWindows;
-        topbar_builder = topbar_builder.with_additional_browser_args(arguments);
+        topbar_builder = topbar_builder.with_additional_browser_args(chrome_browser_arguments());
     }
     let topbar = topbar_builder.build_as_child(&*window)?;
     let popup_ready = proxy.clone();
@@ -1284,9 +1302,10 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         });
     #[cfg(windows)]
-    if headless && let Ok(arguments) = std::env::var("VELUNO_SMOKE_BROWSER_ARGUMENTS") {
+    {
         use wry::WebViewBuilderExtWindows;
-        popup_bar_builder = popup_bar_builder.with_additional_browser_args(arguments);
+        popup_bar_builder =
+            popup_bar_builder.with_additional_browser_args(chrome_browser_arguments());
     }
     let popup_bar = popup_bar_builder.build_as_child(&*popup_window)?;
     let mut last_loading = false;
@@ -1568,6 +1587,14 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             match session.try_save(&state) {
                                 Ok(queued) => { session_dirty = !queued; },
                                 Err(error) => { let _ = proxy.send_event(UserEvent::Status(format!("Could not save your session: {error}"))); },
+                            }
+                        }
+                        for (id, at) in &hidden_at {
+                            if at.elapsed() >= MEMORY_TRIM_DELAY
+                                && *id != state.active_tab_id
+                                && let Some(view) = views.get(id)
+                            {
+                                desktop::trim_memory(view);
                             }
                         }
                         let live: HashSet<_> = views.keys().copied().collect();
@@ -2002,7 +2029,10 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             last_download_host = Some(id);
                             if blank && state.discard_download_tab(id) {
                                 download_only.insert(id);
-                                if let Some(view) = views.get(&id) { desktop::show(view, false); }
+                                if let Some(view) = views.get(&id) {
+                                    desktop::show(view, false);
+                                    desktop::trim_memory(view);
+                                }
                             } else if let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == id) {
                                 tab.is_loading = false; tab.pending_url = None; tab.error = None;
                                 if let Some(url) = document.or_else(|| tab.document_url.clone()) { tab.url = url; }
@@ -2161,11 +2191,6 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         };
         let panes = split_bounds(content_bounds, window.scale_factor());
         let pane = |id: usize| match pair { Some([left, _]) if id == left => panes.0, Some([_, right]) if id == right => panes.1, _ => content_bounds };
-        placed.retain(|id, _| views.contains_key(id));
-        for (id, view) in &views {
-            let target = pane(*id);
-            if placed.get(id) != Some(&target) { let _ = view.set_bounds(target); placed.insert(*id, target); }
-        }
         let wanted: Vec<usize> = pair.map_or_else(|| vec![active_id], |pair| pair.to_vec());
         if wanted != shown || created {
             for id in shown.iter().filter(|id| !wanted.contains(id)) {
@@ -2174,14 +2199,23 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             for id in &wanted {
                 if let Some(view) = views.get(id) { desktop::show(view, true); hidden_at.remove(id); }
             }
-            shown = wanted;
+            shown = wanted.clone();
+        }
+        placed.retain(|id, _| views.contains_key(id));
+        for id in &wanted {
+            if let Some(view) = views.get(id) {
+                let target = pane(*id);
+                if placed.get(id) != Some(&target) { let _ = view.set_bounds(target); placed.insert(*id, target); }
+            }
         }
         let radius = if window.is_maximized() || window.fullscreen().is_some() { 0 } else { (ui::CONTENT_RADIUS * window.scale_factor()) as i32 };
         rounded.retain(|id, _| views.contains_key(id));
-        for (id, view) in &views {
-            let physical = pane(*id).size.to_physical::<u32>(window.scale_factor());
-            let shape = (physical.width, physical.height, radius);
-            if rounded.get(id) != Some(&shape) { desktop::round(view, shape.0 as i32, shape.1 as i32, radius); rounded.insert(*id, shape); }
+        for id in &wanted {
+            if let Some(view) = views.get(id) {
+                let physical = pane(*id).size.to_physical::<u32>(window.scale_factor());
+                let shape = (physical.width, physical.height, radius);
+                if rounded.get(id) != Some(&shape) { desktop::round(view, shape.0 as i32, shape.1 as i32, radius); rounded.insert(*id, shape); }
+            }
         }
         let _ = topbar.set_bounds(topbar_bounds);
         if !palette_open {

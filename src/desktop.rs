@@ -289,22 +289,36 @@ pub fn round(view: &WebView, width: i32, height: i32, radius: i32) {
     }
 }
 
-/// Asks WebView2 to trim a hidden tab's renderer; visible tabs go back to normal.
+/// Shows or hides the tab's WebView. Visible tabs restore normal memory usage.
 pub fn show(view: &WebView, visible: bool) {
     let _ = view.set_visible(visible);
+    #[cfg(windows)]
+    if visible {
+        unsafe {
+            use webview2_com::Microsoft::Web::WebView2::Win32::*;
+            use windows::core::Interface;
+            use wry::WebViewExtWindows;
+            if let Ok(view) = view.webview().cast::<ICoreWebView2_19>() {
+                let _ =
+                    view.SetMemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL);
+            }
+        }
+    }
+}
+
+/// Trims a background tab's renderer memory after an idle duration.
+pub fn trim_memory(view: &WebView) {
     #[cfg(windows)]
     unsafe {
         use webview2_com::Microsoft::Web::WebView2::Win32::*;
         use windows::core::Interface;
         use wry::WebViewExtWindows;
         if let Ok(view) = view.webview().cast::<ICoreWebView2_19>() {
-            let _ = view.SetMemoryUsageTargetLevel(if visible {
-                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
-            } else {
-                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
-            });
+            let _ = view.SetMemoryUsageTargetLevel(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW);
         }
     }
+    #[cfg(not(windows))]
+    let _ = view;
 }
 
 pub fn quiet(view: &WebView) -> bool {
@@ -1058,19 +1072,25 @@ fn block_ads(
         webview.add_WebResourceRequested(
             &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
                 let Some(args) = args else { return Ok(()) };
+                let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT::default();
+                args.ResourceContext(&mut context)?;
+                // Documents load untouched; uBlock Origin already blocks ad frames.
+                if context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT {
+                    return Ok(());
+                }
                 let request = args.Request()?;
                 let mut uri = PWSTR::null();
                 request.Uri(&mut uri)?;
                 let uri = take_pwstr(uri);
+                if !uri.starts_with("http://") && !uri.starts_with("https://") {
+                    return Ok(());
+                }
                 let mut method = PWSTR::null();
                 request.Method(&mut method)?;
                 let method = take_pwstr(method);
-                let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT::default();
-                args.ResourceContext(&mut context)?;
                 let page = page.borrow();
                 let kind = match context {
-                    // Documents load untouched; uBlock Origin already blocks ad frames.
-                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT => return Ok(()),
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT => unreachable!(),
                     COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET => "stylesheet",
                     COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE => "image",
                     COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA => "media",
