@@ -19,5 +19,15 @@ webview2-com = "0.39"
 [build-dependencies]
 embed-resource = "3.0"
 
+[lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+assigning_clones = "warn"
+cast_possible_wrap = "warn"
+format_collect = "warn"
+large_stack_arrays = "warn"
+wildcard_imports = "warn"
+
 [profile.dev]
 debug = "line-tables-only"

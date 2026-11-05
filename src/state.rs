@@ -894,18 +894,17 @@ impl BrowserState {
     pub fn update_active_tab(&mut self, url: String, title: Option<String>) {
         let should_count = self
             .active_tab()
-            .map(|tab| title.is_none() && tab.url != url)
-            .unwrap_or(false);
+            .is_some_and(|tab| title.is_none() && tab.url != url);
+        if should_count {
+            self.record_visit(&url);
+        }
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == self.active_tab_id) {
-            tab.url = url.clone();
+            tab.url = url;
             if let Some(t) = title
                 && !t.is_empty()
             {
                 tab.title = t;
             }
-        }
-        if should_count {
-            self.record_visit(&url);
         }
     }
 
@@ -929,7 +928,7 @@ impl BrowserState {
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
             return;
         };
-        tab.favicon = favicon.clone();
+        tab.favicon.clone_from(&favicon);
         if private {
             return;
         }

@@ -1097,6 +1097,145 @@ fn may_exit(state: &BrowserState, session: &SessionWriter) -> bool {
     true
 }
 
+fn take_tabs_to_trim(
+    hidden_at: &mut HashMap<usize, (std::time::Instant, bool)>,
+    active_tab_id: usize,
+) -> Vec<usize> {
+    let mut tabs = Vec::new();
+    for (id, (at, trimmed)) in hidden_at.iter_mut() {
+        if !*trimmed && at.elapsed() >= MEMORY_TRIM_DELAY && *id != active_tab_id {
+            *trimmed = true;
+            tabs.push(*id);
+        }
+    }
+    tabs
+}
+
+fn build_chrome_views(
+    window: &Window,
+    popup_window: &Window,
+    state: &BrowserState,
+    chrome_context: &mut WebContext,
+    proxy: &EventLoopProxy<UserEvent>,
+    headless: bool,
+) -> wry::Result<(WebView, WebView, permission::Prompt, WebView, WebView)> {
+    let ui_proxy = proxy.clone();
+    let ready = proxy.clone();
+    let mut sidebar_builder = WebViewBuilder::new_with_web_context(chrome_context)
+        .with_bounds(bounds(window, state, 0., 0.).0)
+        .with_html(ui::get_ui_html())
+        .with_focused(false)
+        .with_clipboard(true)
+        .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:text/html;"))
+        .with_on_page_load_handler(move |event, _| {
+            if matches!(event, PageLoadEvent::Finished) {
+                let _ = ready.send_event(UserEvent::Ready);
+            }
+        })
+        .with_ipc_handler(move |request| {
+            if let Ok(command) = serde_json::from_str::<Command>(request.body()) {
+                let _ = ui_proxy.send_event(UserEvent::Command(command));
+            }
+        });
+    #[cfg(windows)]
+    {
+        use wry::WebViewBuilderExtWindows;
+        sidebar_builder = sidebar_builder.with_additional_browser_args(chrome_browser_arguments());
+    }
+    let sidebar = sidebar_builder.build_as_child(window)?;
+    let palette_proxy = proxy.clone();
+    let palette_ready = proxy.clone();
+    let mut palette_builder = WebViewBuilder::new_with_web_context(chrome_context)
+        .with_bounds(bounds(window, state, 0., 0.).2)
+        .with_visible(false)
+        .with_focused(false)
+        .with_transparent(true)
+        .with_background_color((0, 0, 0, 0))
+        .with_html(ui::get_new_tab_html())
+        .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:text/html;"))
+        .with_on_page_load_handler(move |event, _| {
+            if matches!(event, PageLoadEvent::Finished) {
+                let _ = palette_ready.send_event(UserEvent::PaletteReady);
+            }
+        })
+        .with_ipc_handler(move |request| {
+            if let Ok(
+                command @ (Command::SubmitNewTab { .. }
+                | Command::DismissNewTab
+                | Command::SwitchTab { .. }),
+            ) = serde_json::from_str::<Command>(request.body())
+            {
+                let _ = palette_proxy.send_event(UserEvent::Command(command));
+            }
+        });
+    #[cfg(windows)]
+    {
+        use wry::WebViewBuilderExtWindows;
+        palette_builder = palette_builder.with_additional_browser_args(chrome_browser_arguments());
+    }
+    let palette = palette_builder.build_as_child(window)?;
+    let permission_prompt =
+        permission::Prompt::new(window, chrome_context, proxy.clone(), headless)?;
+    let topbar_ready = proxy.clone();
+    let topbar_proxy = proxy.clone();
+    let mut topbar_builder = WebViewBuilder::new_with_web_context(chrome_context)
+        .with_bounds(bounds(window, state, 0., 0.).3)
+        .with_html(ui::get_topbar_html())
+        .with_focused(false)
+        .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:text/html;"))
+        .with_on_page_load_handler(move |event, _| {
+            if matches!(event, PageLoadEvent::Finished) {
+                let _ = topbar_ready.send_event(UserEvent::TopbarReady);
+            }
+        })
+        .with_ipc_handler(move |request| {
+            if let Ok(
+                command @ (Command::TopbarPeek { .. }
+                | Command::WindowMinimize
+                | Command::WindowMaximize
+                | Command::WindowClose
+                | Command::DragWindow
+                | Command::ResizeWindow { .. }),
+            ) = serde_json::from_str::<Command>(request.body())
+            {
+                let _ = topbar_proxy.send_event(UserEvent::Command(command));
+            }
+        });
+    #[cfg(windows)]
+    {
+        use wry::WebViewBuilderExtWindows;
+        topbar_builder = topbar_builder.with_additional_browser_args(chrome_browser_arguments());
+    }
+    let topbar = topbar_builder.build_as_child(window)?;
+    let popup_ready = proxy.clone();
+    let popup_bar_proxy = proxy.clone();
+    let mut popup_bar_builder = WebViewBuilder::new_with_web_context(chrome_context)
+        .with_bounds(popup_bounds(popup_window).0)
+        .with_html(ui::get_popup_html())
+        .with_focused(false)
+        .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:text/html;"))
+        .with_on_page_load_handler(move |event, _| {
+            if matches!(event, PageLoadEvent::Finished) {
+                let _ = popup_ready.send_event(UserEvent::PopupReady);
+            }
+        })
+        .with_ipc_handler(move |request| {
+            if let Ok(command @ (Command::ExpandPopup { .. } | Command::ClosePopup)) =
+                serde_json::from_str::<Command>(request.body())
+            {
+                let _ = popup_bar_proxy.send_event(UserEvent::Command(command));
+            }
+        });
+    #[cfg(windows)]
+    {
+        use wry::WebViewBuilderExtWindows;
+        popup_bar_builder =
+            popup_bar_builder.with_additional_browser_args(chrome_browser_arguments());
+    }
+    let popup_bar = popup_bar_builder.build_as_child(popup_window)?;
+    Ok((sidebar, palette, permission_prompt, topbar, popup_bar))
+}
+
 fn start_ad_blocker_install(proxy: &EventLoopProxy<UserEvent>) {
     let proxy = proxy.clone();
     extensions::install_in_background(move |result| {
@@ -1153,7 +1292,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             })
             .with_min_inner_size(LogicalSize::new(640., 480.))
             .build(&event_loop)
-            .expect("Cannot create window"),
+            .map_err(|error| wry::Error::Io(std::io::Error::other(error)))?,
     );
     let mut popup_window_builder = WindowBuilder::new()
         .with_title("Sign in — Veluno")
@@ -1172,7 +1311,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let popup_window = Rc::new(
         popup_window_builder
             .build(&event_loop)
-            .expect("Cannot create popup window"),
+            .map_err(|error| wry::Error::Io(std::io::Error::other(error)))?,
     );
     let popup_host = PopupHost {
         main: window.clone(),
@@ -1208,120 +1347,14 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     }
     let mut context = WebContext::new(Some(directory.join("WebView2")));
     let mut chrome_context = WebContext::new(Some(directory.join("Chrome")));
-    let ui_proxy = proxy.clone();
-    let ready = proxy.clone();
-    let mut sidebar_builder = WebViewBuilder::new_with_web_context(&mut chrome_context)
-        .with_bounds(bounds(&window, &state, 0., 0.).0)
-        .with_html(ui::get_ui_html())
-        .with_focused(false)
-        .with_clipboard(true)
-        .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:text/html;"))
-        .with_on_page_load_handler(move |event, _| {
-            if matches!(event, PageLoadEvent::Finished) {
-                let _ = ready.send_event(UserEvent::Ready);
-            }
-        })
-        .with_ipc_handler(move |request| {
-            if let Ok(command) = serde_json::from_str::<Command>(request.body()) {
-                let _ = ui_proxy.send_event(UserEvent::Command(command));
-            }
-        });
-    #[cfg(windows)]
-    {
-        use wry::WebViewBuilderExtWindows;
-        sidebar_builder = sidebar_builder.with_additional_browser_args(chrome_browser_arguments());
-    }
-    let sidebar = sidebar_builder.build_as_child(&*window)?;
-    let palette_proxy = proxy.clone();
-    let palette_ready = proxy.clone();
-    let mut palette_builder = WebViewBuilder::new_with_web_context(&mut chrome_context)
-        .with_bounds(bounds(&window, &state, 0., 0.).2)
-        .with_visible(false)
-        .with_focused(false)
-        .with_transparent(true)
-        .with_background_color((0, 0, 0, 0))
-        .with_html(ui::get_new_tab_html())
-        .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:text/html;"))
-        .with_on_page_load_handler(move |event, _| {
-            if matches!(event, PageLoadEvent::Finished) {
-                let _ = palette_ready.send_event(UserEvent::PaletteReady);
-            }
-        })
-        .with_ipc_handler(move |request| {
-            if let Ok(
-                command @ (Command::SubmitNewTab { .. }
-                | Command::DismissNewTab
-                | Command::SwitchTab { .. }),
-            ) = serde_json::from_str::<Command>(request.body())
-            {
-                let _ = palette_proxy.send_event(UserEvent::Command(command));
-            }
-        });
-    #[cfg(windows)]
-    {
-        use wry::WebViewBuilderExtWindows;
-        palette_builder = palette_builder.with_additional_browser_args(chrome_browser_arguments());
-    }
-    let palette = palette_builder.build_as_child(&*window)?;
-    let mut permission_prompt =
-        permission::Prompt::new(&window, &mut chrome_context, proxy.clone(), headless)?;
-    let topbar_ready = proxy.clone();
-    let topbar_proxy = proxy.clone();
-    let mut topbar_builder = WebViewBuilder::new_with_web_context(&mut chrome_context)
-        .with_bounds(bounds(&window, &state, 0., 0.).3)
-        .with_html(ui::get_topbar_html())
-        .with_focused(false)
-        .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:text/html;"))
-        .with_on_page_load_handler(move |event, _| {
-            if matches!(event, PageLoadEvent::Finished) {
-                let _ = topbar_ready.send_event(UserEvent::TopbarReady);
-            }
-        })
-        .with_ipc_handler(move |request| {
-            if let Ok(
-                command @ (Command::TopbarPeek { .. }
-                | Command::WindowMinimize
-                | Command::WindowMaximize
-                | Command::WindowClose
-                | Command::DragWindow
-                | Command::ResizeWindow { .. }),
-            ) = serde_json::from_str::<Command>(request.body())
-            {
-                let _ = topbar_proxy.send_event(UserEvent::Command(command));
-            }
-        });
-    #[cfg(windows)]
-    {
-        use wry::WebViewBuilderExtWindows;
-        topbar_builder = topbar_builder.with_additional_browser_args(chrome_browser_arguments());
-    }
-    let topbar = topbar_builder.build_as_child(&*window)?;
-    let popup_ready = proxy.clone();
-    let popup_bar_proxy = proxy.clone();
-    let mut popup_bar_builder = WebViewBuilder::new_with_web_context(&mut chrome_context)
-        .with_bounds(popup_bounds(&popup_window).0)
-        .with_html(ui::get_popup_html())
-        .with_focused(false)
-        .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:text/html;"))
-        .with_on_page_load_handler(move |event, _| {
-            if matches!(event, PageLoadEvent::Finished) {
-                let _ = popup_ready.send_event(UserEvent::PopupReady);
-            }
-        })
-        .with_ipc_handler(move |request| {
-            if let Ok(command @ (Command::ExpandPopup { .. } | Command::ClosePopup)) =
-                serde_json::from_str::<Command>(request.body())
-            {
-                let _ = popup_bar_proxy.send_event(UserEvent::Command(command));
-            }
-        });
-    #[cfg(windows)]
-    {
-        use wry::WebViewBuilderExtWindows;
-        popup_bar_builder =
-            popup_bar_builder.with_additional_browser_args(chrome_browser_arguments());
-    }
-    let popup_bar = popup_bar_builder.build_as_child(&*popup_window)?;
+    let (sidebar, palette, mut permission_prompt, topbar, popup_bar) = build_chrome_views(
+        &window,
+        &popup_window,
+        &state,
+        &mut chrome_context,
+        &proxy,
+        headless,
+    )?;
     let mut last_loading = false;
     let mut cursor_pos = (100., 100.);
     let mut popup_loading = false;
@@ -1345,7 +1378,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         })
     };
     let mut last_frame = std::time::Instant::now();
-    let mut rounded: HashMap<usize, (u32, u32, i32)> = HashMap::new();
+    let mut rounded: HashMap<usize, (i32, i32, i32)> = HashMap::new();
     let mut views = HashMap::new();
     let initial_id = state.active_tab_id;
     views.insert(
@@ -1372,7 +1405,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut last_sidebar_state = String::new();
     let mut sleep_pending = HashSet::new();
     let mut recovery = recovery::Recovery::default();
-    let mut hidden_at: HashMap<usize, std::time::Instant> = HashMap::new();
+    let mut hidden_at: HashMap<usize, (std::time::Instant, bool)> = HashMap::new();
     let mut focus_address = false;
     let mut downloads: HashMap<usize, usize> = HashMap::new();
     let mut download_only = HashSet::new();
@@ -1603,16 +1636,13 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 Err(error) => { let _ = proxy.send_event(UserEvent::Status(format!("Could not save your session: {error}"))); },
                             }
                         }
-                        for (id, at) in &hidden_at {
-                            if at.elapsed() >= MEMORY_TRIM_DELAY
-                                && *id != state.active_tab_id
-                                && let Some(view) = views.get(id)
-                            {
+                        for id in take_tabs_to_trim(&mut hidden_at, state.active_tab_id) {
+                            if let Some(view) = views.get(&id) {
                                 desktop::trim_memory(view);
                             }
                         }
                         let live: HashSet<_> = views.keys().copied().collect();
-                        let idle: HashSet<_> = hidden_at.iter().filter(|(_, at)| at.elapsed() >= IDLE_SLEEP).map(|(id, _)| *id).collect();
+                        let idle: HashSet<_> = hidden_at.iter().filter(|(_, (at, _))| at.elapsed() >= IDLE_SLEEP).map(|(id, _)| *id).collect();
                         for tab in state.sleep_candidates(&live, &idle, &downloads, 12) {
                             if !sleep_pending.insert((tab.id, tab.generation)) { continue; }
                             let (id, generation, last_active, url) = (tab.id, tab.generation, tab.last_active, tab.url.clone());
@@ -1632,7 +1662,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                     },
                     UserEvent::SleepChecked(id, generation, last_active, url, safe) => {
                         sleep_pending.remove(&(id, generation));
-                        if safe && (views.len() > 12 || hidden_at.get(&id).is_some_and(|at| at.elapsed() >= IDLE_SLEEP)) && id != state.active_tab_id
+                        if safe && (views.len() > 12 || hidden_at.get(&id).is_some_and(|(at, _)| at.elapsed() >= IDLE_SLEEP)) && id != state.active_tab_id
                             && downloads.get(&id).copied().unwrap_or(0) == 0
                             && views.get(&id).is_some_and(desktop::quiet)
                             && let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == id
@@ -2002,8 +2032,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 if let Err(error) = std::process::Command::new("explorer.exe").arg(extensions::directory()).spawn() { state.update_status = Some(format!("Could not open the extensions folder: {error}")); }
                             },
                             Command::Zoom { delta } => if let Some(view) = views.get(&state.active_tab_id) {
-                                let current = zooms.get(&state.active_tab_id).copied().unwrap_or(100) as i32;
-                                let next = if delta == 0 { 100 } else { (current + delta).clamp(30, 300) } as u32;
+                                let current = i32::try_from(zooms.get(&state.active_tab_id).copied().unwrap_or(100)).unwrap_or(100);
+                                let next = u32::try_from(if delta == 0 { 100 } else { (current + delta).clamp(30, 300) }).unwrap_or(100);
                                 if view.zoom(f64::from(next) / 100.).is_ok() { zooms.insert(state.active_tab_id, next); }
                             },
                             Command::Print => if let Some(view) = views.get(&state.active_tab_id) { let _ = view.print(); },
@@ -2208,12 +2238,12 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         let wanted: Vec<usize> = pair.map_or_else(|| vec![active_id], |pair| pair.to_vec());
         if wanted != shown || created {
             for id in shown.iter().filter(|id| !wanted.contains(id)) {
-                if let Some(view) = views.get(id) { desktop::show(view, false); hidden_at.entry(*id).or_insert(now); }
+                if let Some(view) = views.get(id) { desktop::show(view, false); hidden_at.entry(*id).or_insert((now, false)); }
             }
             for id in &wanted {
                 if let Some(view) = views.get(id) { desktop::show(view, true); hidden_at.remove(id); }
             }
-            shown = wanted.clone();
+            shown.clone_from(&wanted);
         }
         placed.retain(|id, _| views.contains_key(id));
         for id in &wanted {
@@ -2226,9 +2256,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         rounded.retain(|id, _| views.contains_key(id));
         for id in &wanted {
             if let Some(view) = views.get(id) {
-                let physical = pane(*id).size.to_physical::<u32>(window.scale_factor());
+                let physical = pane(*id).size.to_physical::<i32>(window.scale_factor());
                 let shape = (physical.width, physical.height, radius);
-                if rounded.get(id) != Some(&shape) { desktop::round(view, shape.0 as i32, shape.1 as i32, radius); rounded.insert(*id, shape); }
+                if rounded.get(id) != Some(&shape) { desktop::round(view, shape.0, shape.1, radius); rounded.insert(*id, shape); }
             }
         }
         let _ = topbar.set_bounds(topbar_bounds);
@@ -2259,7 +2289,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             window.set_title(&format!("{} — Veluno", tab.title));
         }
         if let Ok(json) = serde_json::to_string(&state) {
-            if json != last_sidebar_state && sidebar.evaluate_script(&format!("window.updateState?.({json})")).is_ok() { last_sidebar_state = json.clone(); }
+            if json != last_sidebar_state && sidebar.evaluate_script(&format!("window.updateState?.({json})")).is_ok() { last_sidebar_state.clone_from(&json); }
             if focus_address { if !headless { let _ = sidebar.focus(); } let _ = sidebar.evaluate_script("window.focusAddress()"); focus_address = false; }
             if palette_open && palette_needs_open {
                 let history_json = serde_json::to_string(&history::all()).unwrap_or_else(|_| "[]".into());
@@ -2338,5 +2368,18 @@ mod tests {
         assert_eq!(clear_range("forever"), None);
         let settings: Command = serde_json::from_str(r#"{"action":"open_settings"}"#).unwrap();
         assert!(matches!(settings, Command::OpenSettings { section: None }));
+    }
+
+    #[test]
+    fn background_tabs_trim_once_per_hide_cycle() {
+        let now = std::time::Instant::now();
+        let old = now.checked_sub(MEMORY_TRIM_DELAY).unwrap();
+        let mut hidden_at =
+            HashMap::from([(1, (old, false)), (2, (old, false)), (3, (now, false))]);
+        assert_eq!(take_tabs_to_trim(&mut hidden_at, 1), vec![2]);
+        assert!(take_tabs_to_trim(&mut hidden_at, 1).is_empty());
+        hidden_at.remove(&2);
+        hidden_at.insert(2, (old, false));
+        assert_eq!(take_tabs_to_trim(&mut hidden_at, 1), vec![2]);
     }
 }

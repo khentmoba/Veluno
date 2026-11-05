@@ -146,10 +146,11 @@ pub fn cosmetic_script(url: &str) -> Option<String> {
     let mut selectors: Vec<_> = resources.hide_selectors.into_iter().collect();
     selectors.sort();
     // One rule per selector: a single unsupported selector would void a combined rule.
-    let css: String = selectors
-        .iter()
-        .map(|selector| format!("{selector}{{display:none!important}}\n"))
-        .collect();
+    use std::fmt::Write;
+    let mut css = String::new();
+    for selector in &selectors {
+        let _ = writeln!(css, "{selector}{{display:none!important}}");
+    }
     if css.is_empty() && resources.injected_script.is_empty() {
         return None;
     }
@@ -250,15 +251,9 @@ fn rebuild() -> Result<(), String> {
         .ok_or("Could not download Brave's ad blocking resources.")?;
     let engine = Engine::new_with_filter_set(filters);
 
-    std::fs::create_dir_all(directory()).map_err(|error| error.to_string())?;
-    let write = |path: PathBuf, data: &[u8]| {
-        let partial = path.with_extension("partial");
-        std::fs::write(&partial, data)
-            .and_then(|()| std::fs::rename(&partial, &path))
-            .map_err(|error| error.to_string())
-    };
-    write(resources_path(), resources.as_bytes())?;
-    write(engine_path(), &engine.serialize())
+    profile::write_atomic(&resources_path(), resources.as_bytes())
+        .map_err(|error| error.to_string())?;
+    profile::write_atomic(&engine_path(), &engine.serialize()).map_err(|error| error.to_string())
 }
 
 fn wanted(list: &CatalogList) -> bool {

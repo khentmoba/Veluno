@@ -53,7 +53,12 @@ unsafe fn refresh_download(
     operation: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2DownloadOperation,
     info: &std::cell::RefCell<DownloadInfo>,
 ) -> windows::core::Result<()> {
-    use webview2_com::Microsoft::Web::WebView2::Win32::*;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON,
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED, COREWEBVIEW2_DOWNLOAD_STATE,
+        COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED, COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS,
+        COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED,
+    };
     let mut info = info.borrow_mut();
     let mut path = windows::core::PWSTR::null();
     unsafe {
@@ -144,7 +149,10 @@ pub fn download_counts(
     let mut counts = std::collections::HashMap::new();
     #[cfg(windows)]
     DOWNLOADS.with_borrow_mut(|downloads| {
-        use webview2_com::Microsoft::Web::WebView2::Win32::*;
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED, COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS,
+            COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED,
+        };
         downloads.retain(|(id, operation, info)| unsafe {
             if !views.contains_key(id) {
                 return false;
@@ -207,7 +215,7 @@ pub fn is_default_browser() -> bool {
             .into_iter()
             .all(|protocol| unsafe {
                 let mut value = [0u16; 256];
-                let mut length = value.len() as u32;
+                let mut length = u32::try_from(value.len()).unwrap_or(u32::MAX);
                 AssocQueryStringW(
                     ASSOCF_IS_PROTOCOL,
                     ASSOCSTR_PROGID,
@@ -275,12 +283,16 @@ pub fn vsync() {
 pub fn round(view: &WebView, width: i32, height: i32, radius: i32) {
     #[cfg(windows)]
     {
-        use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
+        use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, SetWindowRgn};
         use wry::WebViewExtWindows;
         unsafe {
             let region = (radius > 0)
                 .then(|| CreateRoundRectRgn(0, 0, width + 1, height + 1, radius * 2, radius * 2));
-            SetWindowRgn(view.hwnd(), region, true);
+            if SetWindowRgn(view.hwnd(), region, true) == 0
+                && let Some(region) = region
+            {
+                let _ = DeleteObject(region.into());
+            }
         }
     }
     #[cfg(not(windows))]
@@ -295,7 +307,9 @@ pub fn show(view: &WebView, visible: bool) {
     #[cfg(windows)]
     if visible {
         unsafe {
-            use webview2_com::Microsoft::Web::WebView2::Win32::*;
+            use webview2_com::Microsoft::Web::WebView2::Win32::{
+                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL, ICoreWebView2_19,
+            };
             use windows::core::Interface;
             use wry::WebViewExtWindows;
             if let Ok(view) = view.webview().cast::<ICoreWebView2_19>() {
@@ -312,7 +326,9 @@ pub fn show(view: &WebView, visible: bool) {
 pub fn trim_memory(view: &WebView) {
     #[cfg(windows)]
     unsafe {
-        use webview2_com::Microsoft::Web::WebView2::Win32::*;
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW, ICoreWebView2_19,
+        };
         use windows::core::Interface;
         use wry::WebViewExtWindows;
         if let Ok(view) = view.webview().cast::<ICoreWebView2_19>() {
@@ -351,7 +367,12 @@ pub fn mute(view: &WebView, muted: bool) -> Result<(), String> {
 
 /// Applies the Settings privacy choices to a content WebView and its profile.
 pub fn apply_privacy(view: &WebView, settings: &crate::settings::Settings) -> Result<(), String> {
-    use webview2_com::Microsoft::Web::WebView2::Win32::*;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_BALANCED,
+        COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_BASIC,
+        COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_STRICT, ICoreWebView2_13, ICoreWebView2Profile3,
+        ICoreWebView2Settings4,
+    };
     use windows::core::Interface;
     use wry::WebViewExtWindows;
     let level = match settings.tracking_prevention.as_str() {
@@ -393,7 +414,18 @@ pub fn clear_browsing_data(
     range_ms: Option<u64>,
     completed: impl FnOnce(Result<(), String>) + 'static,
 ) -> Result<(), String> {
-    use webview2_com::{ClearBrowsingDataCompletedHandler, Microsoft::Web::WebView2::Win32::*};
+    use webview2_com::{
+        ClearBrowsingDataCompletedHandler,
+        Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_BROWSING_DATA_KINDS, COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_DOM_STORAGE,
+            COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY,
+            COREWEBVIEW2_BROWSING_DATA_KINDS_COOKIES, COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE,
+            COREWEBVIEW2_BROWSING_DATA_KINDS_DOWNLOAD_HISTORY,
+            COREWEBVIEW2_BROWSING_DATA_KINDS_GENERAL_AUTOFILL,
+            COREWEBVIEW2_BROWSING_DATA_KINDS_PASSWORD_AUTOSAVE, ICoreWebView2_13,
+            ICoreWebView2Profile2,
+        },
+    };
     use windows::core::Interface;
     use wry::WebViewExtWindows;
     let mut flags = 0;
@@ -446,7 +478,10 @@ pub fn screenshot(
     title: &str,
     completed: impl FnOnce(Result<std::path::PathBuf, String>) + 'static,
 ) -> Result<(), String> {
-    use webview2_com::{CapturePreviewCompletedHandler, Microsoft::Web::WebView2::Win32::*};
+    use webview2_com::{
+        CapturePreviewCompletedHandler,
+        Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+    };
     use windows::{
         Win32::System::Com::{STGM_CREATE, STGM_SHARE_DENY_WRITE, STGM_WRITE},
         Win32::UI::Shell::SHCreateStreamOnFileEx,
@@ -659,7 +694,27 @@ pub fn attach(
     generation: u64,
     proxy: EventLoopProxy<UserEvent>,
 ) -> wry::Result<()> {
-    use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
+    use webview2_com::{
+        AcceleratorKeyPressedEventHandler, BytesReceivedChangedEventHandler,
+        DownloadStartingEventHandler, FaviconChangedEventHandler, FocusChangedEventHandler,
+        HistoryChangedEventHandler, IsDocumentPlayingAudioChangedEventHandler,
+        IsMutedChangedEventHandler,
+        Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_DOWNLOAD_STATE, COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED,
+            COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS, COREWEBVIEW2_KEY_EVENT_KIND,
+            COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN, COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN,
+            COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_KIND_CAMERA,
+            COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ, COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION,
+            COREWEBVIEW2_PERMISSION_KIND_MICROPHONE, COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS,
+            COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_PHYSICAL_KEY_STATUS,
+            COREWEBVIEW2_WEB_ERROR_STATUS, COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED,
+            ICoreWebView2_4, ICoreWebView2_8, ICoreWebView2_15,
+            ICoreWebView2NavigationCompletedEventArgs2,
+        },
+        NavigationCompletedEventHandler, NavigationStartingEventHandler,
+        PermissionRequestedEventHandler, ProcessFailedEventHandler, SourceChangedEventHandler,
+        StateChangedEventHandler, take_pwstr,
+    };
     use windows::core::{BOOL, Interface, PWSTR};
     use wry::WebViewExtWindows;
     let webview = view.webview();
@@ -1028,7 +1083,21 @@ fn block_ads(
 ) -> windows::core::Result<()> {
     use crate::adblock::{self, Block};
     use std::{cell::RefCell, rc::Rc};
-    use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
+    use webview2_com::{
+        AddScriptToExecuteOnDocumentCreatedCompletedHandler,
+        Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_EVENT_SOURCE,
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT,
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA,
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT,
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET,
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_WEBSOCKET,
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST, ICoreWebView2_2,
+        },
+        NavigationStartingEventHandler, WebResourceRequestedEventHandler, take_pwstr,
+    };
     use windows::Win32::UI::Shell::SHCreateMemStream;
     use windows::core::{HSTRING, Interface, PWSTR, w};
     if !adblock::enabled() {
@@ -1179,8 +1248,8 @@ pub fn attach(_: &WebView, _: usize, _: u64, _: EventLoopProxy<UserEvent>) -> wr
 pub fn load_extensions(view: &WebView, directory: &std::path::Path) -> Result<(), String> {
     use webview2_com::{
         BrowserExtensionEnableCompletedHandler, BrowserExtensionRemoveCompletedHandler,
-        Microsoft::Web::WebView2::Win32::*, ProfileAddBrowserExtensionCompletedHandler,
-        ProfileGetBrowserExtensionsCompletedHandler,
+        Microsoft::Web::WebView2::Win32::{ICoreWebView2_13, ICoreWebView2Profile7},
+        ProfileAddBrowserExtensionCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler,
     };
     use windows::core::{BOOL, HSTRING, Interface, PWSTR};
     use wry::WebViewExtWindows;
@@ -1270,7 +1339,10 @@ pub fn load_extensions(_: &WebView, _: &std::path::Path) -> Result<(), String> {
 
 #[cfg(windows)]
 pub fn attach_popup(view: &WebView, proxy: EventLoopProxy<UserEvent>) -> wry::Result<()> {
-    use webview2_com::*;
+    use webview2_com::{
+        NavigationCompletedEventHandler, NavigationStartingEventHandler, SourceChangedEventHandler,
+        WindowCloseRequestedEventHandler, take_pwstr,
+    };
     use windows::core::{BOOL, PWSTR};
     use wry::WebViewExtWindows;
     let webview = view.webview();
@@ -1433,10 +1505,11 @@ mod tests {
                         break;
                     }
                 }
+                static CHUNK: [u8; 32_768] = [b'x'; 32_768];
                 stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=download.txt\r\nContent-Length: 65536\r\nConnection: close\r\n\r\n").unwrap();
-                stream.write_all(&[b'x'; 32768]).unwrap();
+                stream.write_all(&CHUNK).unwrap();
                 wait.recv_timeout(Duration::from_secs(15)).unwrap();
-                stream.write_all(&[b'x'; 32768]).unwrap();
+                stream.write_all(&CHUNK).unwrap();
                 break;
             }
         });

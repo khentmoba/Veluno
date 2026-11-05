@@ -1,7 +1,7 @@
 use crate::{profile, settings};
 use serde::{Deserialize, Serialize};
 use std::sync::{
-    Mutex, MutexGuard, OnceLock, PoisonError,
+    Mutex, MutexGuard, OnceLock,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -28,7 +28,7 @@ fn log() -> MutexGuard<'static, Vec<Entry>> {
         Mutex::new(loaded)
     })
     .lock()
-    .unwrap_or_else(PoisonError::into_inner)
+    .expect("history mutex should never be poisoned")
 }
 
 fn path() -> std::path::PathBuf {
@@ -38,13 +38,17 @@ fn path() -> std::path::PathBuf {
 fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as u64)
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+        })
 }
 
 /// Writes the log if it changed; the maintenance thread calls this so visits never block on disk.
 pub fn flush() {
     static WRITING: Mutex<()> = Mutex::new(());
-    let _writing = WRITING.lock().unwrap_or_else(PoisonError::into_inner);
+    let _writing = WRITING
+        .lock()
+        .expect("history flush mutex should never be poisoned");
     if !DIRTY.swap(false, Ordering::AcqRel) {
         return;
     }
