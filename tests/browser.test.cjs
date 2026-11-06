@@ -193,6 +193,7 @@ assert.ok(uiHtml.includes('submitAddress(newTab=false)'), 'the address submit kn
 assert.ok(uiHtml.includes('autoScrollTabs(e.clientY)'), 'dragging near an edge scrolls the tab list');
 assert.ok(/function autoScrollTabs/.test(uiHtml), 'the tab list has an auto-scroll helper');
 assert.ok(uiHtml.includes("className='tab-loading'"), 'a loading tab shows an indicator');
+assert.ok(uiHtml.includes("addItem('Copy address'"), 'the tab menu can copy the tab address');
 assert.ok(uiHtml.includes('@keyframes tab-spin'), 'the loading indicator animates');
 assert.ok(uiHtml.includes('prefers-reduced-motion:reduce) { .tab-loading'), 'the loading indicator respects reduced motion');
 assert.ok(uiHtml.includes('tab.is_loading,tab.id===currentState.active_tab_id'), 'the tab row re-renders when loading changes');

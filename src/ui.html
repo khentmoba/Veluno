@@ -566,6 +566,7 @@ function openTabContextMenu(tab,clientY) {
  addItem('Move tab up',()=>moveTab(tab,false));
  addItem('Move tab down',()=>moveTab(tab,true));
  addItem('Duplicate tab',()=>Veluno.send('duplicate_tab',{id:tab.id}));
+ addItem('Copy address',()=>{ navigator.clipboard.writeText(tab.url).then(()=>showToast('Address copied'),()=>showToast('Could not copy the address')); });
  const privateTab=(currentState.workspaces||[]).some(w=>w.private&&w.id===tab.workspace_id);
  if(!privateTab&&/^https?:/.test(tab.url)) addItem('Open in side panel',()=>Veluno.send('open_in_side_panel',{id:tab.id}));
  if((currentState.split||[]).includes(tab.id)) addItem('Close split view',()=>Veluno.send('unsplit'));
