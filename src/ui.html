@@ -565,9 +565,19 @@ function renderWorkspaceEmojis(workspace) {
  }));
 }
 const tabMenu=$('tab-context-menu');
-const closeTabMenu=()=>{ if(!tabMenu.hidden) { tabMenu.hidden=true; scheduleHide(); } };
+let menuTabId=null;
+// Closing from the keyboard or a menu item returns focus to the tab it belonged to.
+const closeTabMenu=(restoreFocus=true)=>{
+ if(tabMenu.hidden) return;
+ tabMenu.hidden=true;
+ const id=menuTabId;
+ menuTabId=null;
+ if(restoreFocus&&id!=null) document.querySelector(`.tab-main[data-tab-id="${id}"]`)?.focus({preventScroll:true});
+ scheduleHide();
+};
 function openTabContextMenu(tab,clientY) {
  for(const m of menus) m.open=false;
+ menuTabId=tab.id;
  tabMenu.replaceChildren();
  const addItem=(label,onSelect,disabled=false)=>{
   const btn=document.createElement('button'); btn.type='button'; btn.role='menuitem'; btn.textContent=label; btn.disabled=disabled;
@@ -665,7 +675,7 @@ for(const menu of menus) {
  menu.addEventListener('keydown',e=>{ if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key)||!menu.open||e.target.matches('input,select'))return; e.preventDefault(); const items=[...menu.querySelectorAll('button:not(:disabled)')]; const index=items.indexOf(document.activeElement); items[e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus(); });
 }
 tabMenu.addEventListener('keydown',e=>{ if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key)||tabMenu.hidden)return; e.preventDefault(); const items=[...tabMenu.querySelectorAll('button:not(:disabled)')]; const index=items.indexOf(document.activeElement); items[e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus(); });
-document.addEventListener('click',e=>{ for(const menu of menus) if(!menu.contains(e.target)) menu.open=false; if(!tabMenu.hidden&&!tabMenu.contains(e.target)) closeTabMenu(); });
+document.addEventListener('click',e=>{ for(const menu of menus) if(!menu.contains(e.target)) menu.open=false; if(!tabMenu.hidden&&!tabMenu.contains(e.target)) closeTabMenu(false); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') { if(!$('downloads-panel').hidden) { e.preventDefault(); Veluno.send('close_downloads'); return; } if(!$('activity').hidden) { e.preventDefault(); $('activity').hidden=true; return; } closeTabMenu(); for(const menu of menus) if(menu.open) { menu.open=false; menu.querySelector('summary').focus(); } } });
 const sideResizeDir=e=>e.clientX<5?(e.clientY<8?'nw':e.clientY>window.innerHeight-8?'sw':'w'):e.clientY<5?'n':e.clientY>window.innerHeight-5?'s':'';
 document.addEventListener('mousemove',e=>{ const dir=sideResizeDir(e); document.body.style.cursor=dir==='nw'?'nwse-resize':dir==='sw'?'nesw-resize':dir==='w'?'ew-resize':dir==='n'||dir==='s'?'ns-resize':''; });

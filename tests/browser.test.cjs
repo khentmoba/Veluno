@@ -196,6 +196,9 @@ assert.ok(uiHtml.includes("className='tab-loading'"), 'a loading tab shows an in
 assert.ok(uiHtml.includes("addItem('Copy address'"), 'the tab menu can copy the tab address');
 assert.ok(uiHtml.includes('id="announcer" role="status" aria-live="polite"'), 'changes are announced politely');
 assert.ok(/function announce\(message\)/.test(uiHtml), 'the sidebar has an announcement helper');
+assert.ok(/closeTabMenu\(false\)/.test(uiHtml), 'an outside click closes the tab menu without stealing focus');
+assert.ok(/menuTabId=tab\.id/.test(uiHtml), 'the tab menu remembers its tab');
+assert.ok(/closeTabMenu\(restoreFocus=true\)/.test(uiHtml), 'closing the tab menu restores focus by default');
 assert.ok(uiHtml.includes("announce('Workspace '"), 'a workspace change is announced');
 assert.ok(/announce\('Tab '\.\+\(active\.title/.test(uiHtml), 'a tab change is announced');
 assert.ok(/if\(!\$\('activity'\)\.hidden\) \{ e\.preventDefault\(\); \$\('activity'\)\.hidden=true; return; \}/.test(uiHtml), 'Escape dismisses the status message');
