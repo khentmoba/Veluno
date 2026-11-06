@@ -164,6 +164,9 @@ pub enum Command {
         url: String,
     },
     ClearHistory,
+    ClearHistoryRange {
+        range: String,
+    },
     SetSetting {
         key: String,
         value: serde_json::Value,
@@ -2008,6 +2011,12 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::OpenHistory => { state.open_internal("veluno://history"); palette_open = false; },
                             Command::DeleteHistory { url } => history::remove(&url),
                             Command::ClearHistory => history::clear(),
+                            Command::ClearHistoryRange { range } => {
+                                if let Some((length, label)) = clear_range(&range) {
+                                    history::clear_recent(length);
+                                    state.update_status = Some(format!("Cleared browsing history from {label}."));
+                                }
+                            },
                             Command::SetSetting { key, value } => match settings::set(&key, &value) {
                                 Ok(current) => {
                                     if key == "accent" {
