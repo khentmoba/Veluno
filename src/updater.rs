@@ -510,7 +510,9 @@ bbb222  veluno-setup.exe
             Some(Version {
                 major: 0,
                 minor: 1,
-                patch: 0
+                patch: 0,
+                revision: 0,
+                prerelease: false
             })
         );
         assert_eq!(
@@ -518,7 +520,9 @@ bbb222  veluno-setup.exe
             Some(Version {
                 major: 1,
                 minor: 2,
-                patch: 3
+                patch: 3,
+                revision: 0,
+                prerelease: false
             })
         );
         assert_eq!(
@@ -526,7 +530,9 @@ bbb222  veluno-setup.exe
             Some(Version {
                 major: 0,
                 minor: 9,
-                patch: 15
+                patch: 15,
+                revision: 0,
+                prerelease: true
             })
         );
         assert_eq!(Version::parse("invalid"), None);
@@ -541,13 +547,35 @@ bbb222  veluno-setup.exe
         assert!(!is_newer("0.1.0", "0.2.0"));
         assert!(!is_newer("v0.1.0", "0.1.0"));
         assert!(is_newer("0.3.5.1", "0.3.5"), "a fourth segment is compared");
-        assert!(!is_newer("0.3.5.0", "0.3.5"), "a zero revision is the same release");
-        assert!(is_newer("0.3.5", "0.3.5-beta"), "a release beats its pre-release");
+        assert!(
+            !is_newer("0.3.5.0", "0.3.5"),
+            "a zero revision is the same release"
+        );
+        assert!(
+            is_newer("0.3.5", "0.3.5-beta"),
+            "a release beats its pre-release"
+        );
         assert!(!is_newer("0.3.5-beta", "0.3.5"));
-        assert!(!is_newer("0.3.5+build.7", "0.3.5"), "build metadata is ignored");
+        assert!(
+            !is_newer("0.3.5+build.7", "0.3.5"),
+            "build metadata is ignored"
+        );
         assert!(is_newer("0.3.6-beta", "0.3.5"));
-        assert_eq!(Version::parse("1.2.3.4.5"), None, "five segments are rejected");
-        assert_eq!(Version::parse("1.2.3-beta"), Some(Version { major: 1, minor: 2, patch: 3, revision: 0, prerelease: true }));
+        assert_eq!(
+            Version::parse("1.2.3.4.5"),
+            None,
+            "five segments are rejected"
+        );
+        assert_eq!(
+            Version::parse("1.2.3-beta"),
+            Some(Version {
+                major: 1,
+                minor: 2,
+                patch: 3,
+                revision: 0,
+                prerelease: true
+            })
+        );
     }
 
     #[test]

@@ -282,13 +282,23 @@ mod tests {
     fn a_large_saved_log_is_capped_when_it_loads() {
         let mut entries = Vec::new();
         for n in 0..MAX_ENTRIES + 50 {
-            record(&mut entries, &format!("https://{n}.test/"), "t", n as u64, None);
+            record(
+                &mut entries,
+                &format!("https://{n}.test/"),
+                "t",
+                n as u64,
+                None,
+            );
         }
         let json = serde_json::to_string(&entries).unwrap();
         let mut loaded: Vec<Entry> = serde_json::from_str(&json).unwrap();
         loaded.truncate(MAX_ENTRIES);
         assert_eq!(loaded.len(), MAX_ENTRIES);
-        assert_eq!(loaded[0].url, "https://0.test/", "the newest rows are kept");
+        assert_eq!(
+            loaded[0].url,
+            format!("https://{}.test/", MAX_ENTRIES + 49),
+            "the newest rows are kept and the oldest are dropped"
+        );
     }
 
     #[test]

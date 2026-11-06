@@ -216,7 +216,10 @@ mod tests {
         let mut out = Vec::new();
         let mut skipped = 0;
         collect(&tree, &mut out, &mut skipped);
-        assert_eq!(skipped, 3, "script, file, and chrome links are reported, not silently dropped");
+        assert_eq!(
+            skipped, 3,
+            "script, file, and chrome links are reported, not silently dropped"
+        );
         let urls: Vec<_> = out.iter().map(|b| b.url.as_str()).collect();
         assert_eq!(
             urls,
