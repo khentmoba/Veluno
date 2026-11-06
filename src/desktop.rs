@@ -1128,6 +1128,43 @@ pub fn attach(
     Ok(())
 }
 
+/// Receives page messages posted through `window.chrome.webview.postMessage`.
+///
+/// wry's own IPC handler would define a frozen `window.ipc` global, which page scripts such as
+/// Google Keep's instrumentation read as their own `ipc` function and crash on.
+#[cfg(windows)]
+pub fn attach_ipc(view: &WebView, handler: impl Fn(&str, &str) + 'static) -> Result<(), String> {
+    use webview2_com::{WebMessageReceivedEventHandler, take_pwstr};
+    use windows::core::PWSTR;
+    use wry::WebViewExtWindows;
+    let webview = view.webview();
+    let mut token = 0;
+    // SAFETY: `webview` is borrowed for the call, and the handler owns the closure rather than
+    // borrowing it. The token is a local out-parameter.
+    unsafe {
+        webview
+            .add_WebMessageReceived(
+                &WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
+                    let Some(args) = args else { return Ok(()) };
+                    let mut source = PWSTR::null();
+                    args.Source(&mut source)?;
+                    let source = take_pwstr(source);
+                    let mut body = PWSTR::null();
+                    args.TryGetWebMessageAsString(&mut body)?;
+                    handler(&source, &take_pwstr(body));
+                    Ok(())
+                })),
+                &mut token,
+            )
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[cfg(not(windows))]
+pub fn attach_ipc(_: &WebView, _: impl Fn(&str, &str) + 'static) -> Result<(), String> {
+    Ok(())
+}
+
 /// Blocks ads in a WebView that is not a tab, such as the side web panel.
 pub fn block_view_ads(view: &WebView) {
     #[cfg(windows)]

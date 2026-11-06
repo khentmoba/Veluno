@@ -1,7 +1,10 @@
 (() => {
   if (window.Veluno) return;
+  // WebView2 posts to the host through chrome.webview; window.ipc is only there on Veluno's own pages.
+  const bridge = window.chrome?.webview;
+  const post = message => bridge ? bridge.postMessage(message) : window.ipc?.postMessage(message);
   function send(action, payload = {}) {
-    window.ipc?.postMessage(JSON.stringify({ action, ...payload }));
+    post(JSON.stringify({ action, ...payload }));
   }
   // Search keywords: '@yt cats' searches YouTube; a bare '@yt' opens the site.
   const keywords = {
@@ -123,7 +126,7 @@
     return options.sort((a,b)=>b.score-a.score).map(item=>item.option);
   }
   window.Veluno = { send, resolveAddress, suggestions, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
-  const postShortcut = window.ipc?.postMessage.bind(window.ipc);
+  const postShortcut = post;
   const stringify = JSON.stringify;
   window.addEventListener('keydown', event => {
     if (!event.isTrusted || event.defaultPrevented || event.isComposing || event.repeat) return;

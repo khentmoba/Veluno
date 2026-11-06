@@ -660,7 +660,7 @@ fn open_popup(
 }
 
 /// Lets Escape or Ctrl+W inside a Glance preview dismiss it, unless the page handles the key.
-const GLANCE_SCRIPT: &str = r#"addEventListener('keydown',e=>{if(!e.isTrusted||e.defaultPrevented||e.isComposing||window.top!==window)return;const k=e.key.toLowerCase(),plain=!e.ctrlKey&&!e.altKey&&!e.shiftKey&&!e.metaKey;if((plain&&k==='escape')||(e.ctrlKey&&!e.altKey&&!e.shiftKey&&k==='w')){e.preventDefault();window.ipc?.postMessage('{"action":"close_popup"}');}},true);"#;
+const GLANCE_SCRIPT: &str = r#"addEventListener('keydown',e=>{if(!e.isTrusted||e.defaultPrevented||e.isComposing||window.top!==window)return;const k=e.key.toLowerCase(),plain=!e.ctrlKey&&!e.altKey&&!e.shiftKey&&!e.metaKey;if((plain&&k==='escape')||(e.ctrlKey&&!e.altKey&&!e.shiftKey&&k==='w')){e.preventDefault();(window.chrome?.webview??window.ipc)?.postMessage('{"action":"close_popup"}');}},true);"#;
 
 /// Opens a link preview in the popup window, centered over the browser and sharing the tab profile.
 fn open_glance(
@@ -724,12 +724,12 @@ fn open_glance(
                     tab_proxy.send_event(UserEvent::Command(Command::NewTab { url: Some(target) }));
             }
             NewWindowResponse::Deny
-        })
-        .with_ipc_handler(move |request| {
-            if let Ok(Command::ClosePopup) = serde_json::from_str::<Command>(request.body()) {
-                let _ = ipc_proxy.send_event(UserEvent::Command(Command::ClosePopup));
-            }
         });
+    let handle_ipc = move |_: &str, body: &str| {
+        if let Ok(Command::ClosePopup) = serde_json::from_str::<Command>(body) {
+            let _ = ipc_proxy.send_event(UserEvent::Command(Command::ClosePopup));
+        }
+    };
     // WebView2 rejects a second view on the tab profile unless its environment options match.
     #[cfg(windows)]
     {
@@ -740,6 +740,7 @@ fn open_glance(
         }
     }
     let view = builder.with_url(url).build_as_child(&*host.window)?;
+    let _ = desktop::attach_ipc(&view, handle_ipc);
     let _ = desktop::attach_popup(&view, proxy.clone());
     let _ = desktop::apply_privacy(&view, &settings::get());
     *host.view.borrow_mut() = Some(view);
@@ -835,77 +836,74 @@ fn content(
                 let _ = popup.send_event(UserEvent::Command(Command::NewTab { url: Some(url) }));
             }
             NewWindowResponse::Deny
-        })
-        .with_ipc_handler(move |request| {
-            if let Ok(message) = serde_json::from_str::<ContentCommand>(request.body()) {
-                let local = request
-                    .uri()
-                    .scheme_str()
-                    .is_none_or(|scheme| scheme == "data")
-                    || request.uri() == "about:blank";
-                let trusted = message.shortcut_token.as_deref() == Some(&token);
-                if trusted
-                    && let Command::ResourceLoadFailed {
-                        document_url,
-                        resource_url,
-                    } = &message.command
-                {
-                    let _ = ipc.send_event(UserEvent::ResourceLoadFailed(
-                        id,
-                        generation,
-                        document_url.clone(),
-                        resource_url.clone(),
-                    ));
-                    return;
-                }
-                if (local
+        });
+    let handle_ipc = move |uri: &str, body: &str| {
+        if let Ok(message) = serde_json::from_str::<ContentCommand>(body) {
+            let local = url::Url::parse(uri).is_ok_and(|url| url.scheme() == "data")
+                || uri == "about:blank";
+            let trusted = message.shortcut_token.as_deref() == Some(&token);
+            if trusted
+                && let Command::ResourceLoadFailed {
+                    document_url,
+                    resource_url,
+                } = &message.command
+            {
+                let _ = ipc.send_event(UserEvent::ResourceLoadFailed(
+                    id,
+                    generation,
+                    document_url.clone(),
+                    resource_url.clone(),
+                ));
+                return;
+            }
+            if (local
+                && matches!(
+                    message.command,
+                    Command::Navigate { .. }
+                        | Command::Retry
+                        | Command::SetSetting { .. }
+                        | Command::DeleteHistory { .. }
+                        | Command::ClearHistory
+                        | Command::InstallAdBlocker
+                        | Command::OpenExtensionsFolder
+                        | Command::DefaultBrowser
+                        | Command::CheckUpdates
+                        | Command::ClearBrowsingData { .. }
+                        | Command::ImportBookmarks { .. }
+                        | Command::ToggleBookmark { url: Some(_) }
+                ))
+                || (trusted
                     && matches!(
                         message.command,
-                        Command::Navigate { .. }
-                            | Command::Retry
-                            | Command::SetSetting { .. }
-                            | Command::DeleteHistory { .. }
-                            | Command::ClearHistory
-                            | Command::InstallAdBlocker
-                            | Command::OpenExtensionsFolder
-                            | Command::DefaultBrowser
-                            | Command::CheckUpdates
-                            | Command::ClearBrowsingData { .. }
-                            | Command::ImportBookmarks { .. }
-                            | Command::ToggleBookmark { url: Some(_) }
+                        Command::Back
+                            | Command::Forward
+                            | Command::Reload
+                            | Command::ReloadFresh
+                            | Command::Stop
+                            | Command::NewTab { .. }
+                            | Command::CloseActiveTab
+                            | Command::FocusAddress
+                            | Command::ToggleSidebar
+                            | Command::RestoreClosedTab
+                            | Command::SleepInactiveTabs
+                            | Command::CycleTab { .. }
+                            | Command::SwitchProfile { .. }
+                            | Command::OpenDownloads
+                            | Command::ToggleDownloads
+                            | Command::OpenHistory
+                            | Command::Zoom { .. }
+                            | Command::ToggleFullscreen
+                            | Command::ToggleBookmark { url: None }
+                            | Command::NewPrivateTab
+                            | Command::ToggleReader
+                            | Command::OpenSettings { .. }
+                            | Command::Glance { .. }
                     ))
-                    || (trusted
-                        && matches!(
-                            message.command,
-                            Command::Back
-                                | Command::Forward
-                                | Command::Reload
-                                | Command::ReloadFresh
-                                | Command::Stop
-                                | Command::NewTab { .. }
-                                | Command::CloseActiveTab
-                                | Command::FocusAddress
-                                | Command::ToggleSidebar
-                                | Command::RestoreClosedTab
-                                | Command::SleepInactiveTabs
-                                | Command::CycleTab { .. }
-                                | Command::SwitchProfile { .. }
-                                | Command::OpenDownloads
-                                | Command::ToggleDownloads
-                                | Command::OpenHistory
-                                | Command::Zoom { .. }
-                                | Command::ToggleFullscreen
-                                | Command::ToggleBookmark { url: None }
-                                | Command::NewPrivateTab
-                                | Command::ToggleReader
-                                | Command::OpenSettings { .. }
-                                | Command::Glance { .. }
-                        ))
-                {
-                    let _ = ipc.send_event(UserEvent::Command(message.command));
-                }
+            {
+                let _ = ipc.send_event(UserEvent::Command(message.command));
             }
-        });
+        }
+    };
     #[cfg(windows)]
     {
         use wry::WebViewBuilderExtWindows;
@@ -924,6 +922,7 @@ fn content(
         builder = builder.with_browser_extensions_enabled(true);
     }
     let view = builder.build_as_child(window)?;
+    let _ = desktop::attach_ipc(&view, handle_ipc);
     desktop::attach(&view, id, generation, proxy.clone())?;
     if !private && extensions::enabled_at_startup() {
         let _ = desktop::load_extensions(&view, &extensions::directory());

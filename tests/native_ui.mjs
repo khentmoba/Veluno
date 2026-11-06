@@ -65,7 +65,7 @@ try {
   const content = await connect(page => page.url === origin + '/keyboard', contentPort);
   await until(() => content.evaluate(`location.href === ${JSON.stringify(origin + '/keyboard')} && document.readyState === 'complete' && !!window.Veluno`), 'keyboard fixture');
   await sidebar.evaluate(`(()=>{const update=window.updateAddressHistory;window.addressSuggestionCalls=0;window.updateAddressHistory=entries=>{window.addressSuggestionCalls++;update(entries)}})()`);
-  await content.evaluate('window.ipc.postMessage(JSON.stringify({action:"address_suggestions"}));true');
+  await content.evaluate('window.chrome.webview.postMessage(JSON.stringify({action:"address_suggestions"}));true');
   await new Promise(resolve => setTimeout(resolve, 200));
   assert.equal(await sidebar.evaluate('window.addressSuggestionCalls'), 0, 'Remote pages cannot request local address history');
   await content.evaluate('window.pageMarker = "kept"');
@@ -113,6 +113,7 @@ try {
   assert.equal(await palette.evaluate('document.getAnimations().filter(animation => animation.id.startsWith("palette-") && animation.playState === "running").length'), 0);
   await press(palette, 'Escape');
   await until(() => palette.evaluate('input.readOnly'), 'reduced-motion cancel');
+  assert.equal(await restored.evaluate('typeof window.ipc'), 'undefined', 'pages keep their own ipc global, as Google Keep needs');
   const beforePageIpc = await sidebar.evaluate('currentState.tabs.length');
   await restored.evaluate('Veluno.send("new_tab"); Veluno.send("duplicate_tab", { id: 1 }); Veluno.send("move_tab_to_workspace", { id: 1, workspace_id: 2 }); Veluno.send("expand_popup", { url: "https://example.com" })');
   await new Promise(resolve => setTimeout(resolve, 200));
@@ -167,7 +168,7 @@ try {
   await locator.call('Runtime.evaluate', { expression: 'navigator.geolocation.getCurrentPosition(()=>{},()=>{});true', userGesture: true });
   await until(() => permission.evaluate('current?.kind === "location"'), 'location prompt');
   const staleToken = await permission.evaluate('current.token');
-  await locator.evaluate(`window.ipc.postMessage(JSON.stringify({token:${staleToken},allow:true}));true`);
+  await locator.evaluate(`window.chrome.webview.postMessage(JSON.stringify({token:${staleToken},allow:true}));true`);
   assert.equal(await permission.evaluate('current.token'), staleToken, 'page IPC cannot answer a browser permission prompt');
   assert.notEqual(await locator.evaluate('navigator.permissions.query({name:"geolocation"}).then(result=>result.state)'), 'granted');
   await command('navigate', { url: origin + '/navigated' });
