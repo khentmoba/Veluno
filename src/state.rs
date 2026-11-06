@@ -191,7 +191,11 @@ impl BrowserState {
 
     pub fn restore() -> Self {
         let path = crate::profile::directory().join("session.json");
-        for candidate in [path.clone(), path.with_extension("json.bak")] {
+        for candidate in [
+            path.clone(),
+            path.with_extension("json.bak"),
+            path.with_extension("json.bak2"),
+        ] {
             if let Ok(json) = std::fs::read_to_string(&candidate)
                 && let Some(mut state) = Self::from_session(&json)
             {

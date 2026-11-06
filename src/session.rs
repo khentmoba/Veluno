@@ -93,9 +93,18 @@ mod tests {
         writer.flush(&state).unwrap();
         let older = std::fs::read_to_string(path.with_extension("json.bak2")).unwrap();
         assert_eq!(
-            BrowserState::from_session(&older).unwrap().active_tab_id,
+            BrowserState::from_session(&older).unwrap().tabs.len(),
+            1,
+            "the oldest generation is still readable"
+        );
+        assert_eq!(
+            BrowserState::from_session(
+                &std::fs::read_to_string(path.with_extension("json.bak")).unwrap()
+            )
+            .unwrap()
+            .active_tab_id,
             latest,
-            "the older generation still restores"
+            "the newest backup restores the newest saved tab"
         );
         assert_eq!(
             BrowserState::from_session(&std::fs::read_to_string(&path).unwrap())
