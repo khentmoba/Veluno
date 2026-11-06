@@ -86,17 +86,29 @@ def window_geometry(process_id):
     return {
         'window': rect_tuple(frame),
         'monitor': rect_tuple(info.rcMonitor),
+        'work': rect_tuple(info.rcWork),
         'client': (origin.x, origin.y, origin.x + client.right, origin.y + client.bottom),
         'panels': panels,
     }
 
 
+def covers_screen(state):
+    """The window frame and its client area both match the monitor."""
+    return state['window'] == state['monitor'] and state['client'] == state['monitor']
+
+
 def fills_screen(state):
-    return state['window'] == state['monitor'] and state['panels'] == [state['client']]
+    """Fullscreen video covers the monitor and the page is the only panel left on screen."""
+    return covers_screen(state) and state['panels'] == [state['client']]
 
 
 def is_windowed(state):
     return state['window'] != state['monitor'] and len(state['panels']) >= 2
+
+
+def is_maximized(state):
+    """A maximized window keeps the work area, so the taskbar stays visible below it."""
+    return state['window'] != state['monitor'] and state['client'] == state['work']
 
 
 class FullscreenFixture(BaseHTTPRequestHandler):
@@ -146,7 +158,10 @@ def check_content_fullscreen(executable):
     def enter_video_fullscreen():
         entered = page("document.getElementById('player').requestFullscreen().then(() => document.fullscreenElement?.id ?? null)")
         assert entered == 'player', f'Page did not enter HTML fullscreen: {entered!r}'
-        return wait_until('The video went fullscreen in the page, but the window did not fill the screen', geometry(fills_screen))
+        wait_until('The video went fullscreen in the page, but the window did not fill the screen', geometry(fills_screen))
+        viewport = page('[innerWidth, innerHeight, screen.width, screen.height]')
+        assert abs(viewport[0] - viewport[2]) <= 1 and abs(viewport[1] - viewport[3]) <= 1, f'Page viewport does not match the screen: {viewport}'
+        return viewport
 
     def wait_for_windowed(description):
         return wait_until(description, geometry(is_windowed))
@@ -161,11 +176,25 @@ def check_content_fullscreen(executable):
             assert not fills_screen(window_geometry(process.pid)), 'Window was fullscreen before the test'
 
             # Leaving video fullscreen from the page restores the browser layout.
-            enter_video_fullscreen()
-            viewport = page('[innerWidth, innerHeight, screen.width, screen.height]')
-            assert abs(viewport[0] - viewport[2]) <= 1 and abs(viewport[1] - viewport[3]) <= 1, f'Page viewport does not match the screen: {viewport}'
+            viewport = enter_video_fullscreen()
             page('document.exitFullscreen().then(() => document.fullscreenElement === null)')
             wait_for_windowed('Leaving video fullscreen did not restore the browser layout')
+
+            # A maximized window keeps its work-area client size, so fullscreen has to restore it
+            # first or the page stops at the taskbar instead of covering it.
+            sidebar('window.ipc.postMessage(JSON.stringify({action:"window_maximize"}));true')
+            wait_until('The window did not maximize', geometry(is_maximized))
+            enter_video_fullscreen()
+            page('document.exitFullscreen().then(() => document.fullscreenElement === null)')
+            wait_until('Leaving video fullscreen did not return to a maximized window', geometry(is_maximized))
+
+            # F11 from a maximized window covers the screen too, and comes back maximized.
+            sidebar('window.ipc.postMessage(JSON.stringify({action:"toggle_fullscreen"}));true')
+            wait_until('F11 from a maximized window did not cover the screen', geometry(covers_screen))
+            sidebar('window.ipc.postMessage(JSON.stringify({action:"toggle_fullscreen"}));true')
+            wait_until('Leaving F11 fullscreen did not return to a maximized window', geometry(is_maximized))
+            sidebar('window.ipc.postMessage(JSON.stringify({action:"window_maximize"}));true')
+            wait_for_windowed('The window did not return to its windowed frame')
 
             # F11 also leaves video fullscreen, and the page must leave its fullscreen too.
             enter_video_fullscreen()
