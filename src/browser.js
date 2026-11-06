@@ -141,7 +141,21 @@
     if (index < value.length) parts.push({ text: value.slice(index), match: false });
     return parts;
   }
-  window.Veluno = { send, resolveAddress, suggestions, highlight, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
+  // Completed downloads only: a transfer in progress is not a saved file yet.
+  function downloadSummary(items = []) {
+    const complete = items.filter(item => item.status === 'complete'
+      || (item.status === 'downloading' && item.total > 0 && item.received >= item.total));
+    const total = complete.reduce((sum, item) => sum + Math.max(0, Number(item.received) || 0), 0);
+    return {
+      count: complete.length,
+      total,
+      newest: complete.length ? complete[complete.length - 1].id : null,
+      label: complete.length
+        ? `${complete.length} ${complete.length === 1 ? 'file' : 'files'} · ${(total / (1024 * 1024)).toFixed(1)} MB`
+        : '',
+    };
+  }
+  window.Veluno = { send, resolveAddress, suggestions, highlight, downloadSummary, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
   const postShortcut = post;
   const stringify = JSON.stringify;
   window.addEventListener('keydown', event => {

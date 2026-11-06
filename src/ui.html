@@ -52,7 +52,7 @@ details { position:relative; } summary { list-style:none; cursor:pointer; } summ
 .update-header span { flex:1; }
 .downloads-panel { position:absolute; bottom:calc(100% + 8px); left:0; right:0; z-index:30; max-height:min(360px,calc(100vh - 180px)); overflow:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:10px; }
 .footer { position:relative; }
-.downloads-heading { display:flex; align-items:center; justify-content:space-between; }
+.downloads-heading { display:flex; align-items:center; justify-content:space-between; } .downloads-summary { color:var(--muted); font-size:11px; margin:8px 0 0; font-variant-numeric:tabular-nums; }
 .download-item { padding:10px 0; border-top:1px solid var(--line); font-size:12px; overflow-wrap:anywhere; }
 .download-item strong { display:block; font-weight:600; }
 .download-item small { display:block; color:var(--muted); margin:5px 0; font-variant-numeric:tabular-nums; }
@@ -153,7 +153,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="toast-undo" title="Reopen closed tab (Ctrl+Shift+T)" hidden>Undo</button></div>
 </div>
 <footer class="footer">
-<section class="downloads-panel" id="downloads-panel" aria-label="Downloads" hidden><div class="downloads-heading"><strong>Downloads</strong><div style="display:flex;align-items:center;gap:6px"><button class="text-button" id="clear-downloads" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;padding:2px 4px" hidden>Clear</button><button class="icon" id="close-downloads" aria-label="Close downloads"><svg><use href="#close"/></svg></button></div></div><p id="downloads-empty">No downloads this session.</p><div id="download-items"></div></section>
+<section class="downloads-panel" id="downloads-panel" aria-label="Downloads" hidden><div class="downloads-heading"><strong>Downloads</strong><div style="display:flex;align-items:center;gap:6px"><button class="text-button" id="reveal-downloads" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;padding:2px 4px" hidden>Show folder</button><button class="text-button" id="clear-downloads" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;padding:2px 4px" hidden>Clear</button><button class="icon" id="close-downloads" aria-label="Close downloads"><svg><use href="#close"/></svg></button></div></div><p id="downloads-empty">No downloads this session.</p><div class="downloads-summary" id="downloads-summary" hidden></div><div id="download-items"></div></section>
 <button class="download-control" id="btn-downloads" title="Downloads (Ctrl+J)" aria-label="Downloads"><svg><use href="#download"/></svg><span>Downloads</span><small id="download-count"></small></button>
 <button class="sleep-control" id="btn-ram-saver" title="Unload background tabs to free memory (Ctrl+Shift+S)"><svg><use href="#moon"/></svg><span id="sleep-label">Sleep background tabs</span><svg><use href="#forward"/></svg></button>
 <div class="workspace-switcher"><details id="profiles"><summary aria-label="Switch workspace"><svg aria-hidden="true"><use href="#globe"/></svg><span id="profile-current">General</span></summary><div class="menu"><p>Workspaces</p><div id="spaces" aria-label="Workspaces"></div><div id="workspace-emojis" role="group" aria-label="Workspace icon"></div><form id="profile-form"><label for="profile-name">New workspace</label><input id="profile-name" placeholder="e.g. School" maxlength="40" required autocomplete="off"><small>Workspaces organize tabs and pins. Website logins are shared.</small><p id="profile-error" role="alert" hidden></p><button type="submit">Create workspace</button></form><div class="workspace-actions"><button type="button" id="rename-workspace">Rename workspace</button><button type="button" id="delete-workspace">Delete workspace</button></div>
@@ -365,6 +365,10 @@ window.updateState = state => {
  if(JSON.stringify(previous.download_items)!==JSON.stringify(state.download_items)) {
   const items=state.download_items||[];
   $('downloads-empty').hidden=items.length>0;
+  const summary=Veluno.downloadSummary(items);
+  $('downloads-summary').textContent=summary.label;
+  $('downloads-summary').hidden=!summary.label;
+  $('reveal-downloads').hidden=summary.newest==null;
   $('clear-downloads').hidden=!items.some(i=>i.status!=='downloading');
   $('download-items').replaceChildren(...items.slice().reverse().map(item=>{
    const row=document.createElement('div'); row.className='download-item';
@@ -500,6 +504,7 @@ $('btn-ram-saver').onclick=()=>Veluno.send('sleep_inactive_tabs');
 $('toast-undo').onclick=()=>{ Veluno.send('restore_closed_tab'); $('toast').hidden=true; };
 $('close-downloads').onclick=()=>Veluno.send('close_downloads');
 $('clear-downloads').onclick=()=>Veluno.send('clear_downloads');
+$('reveal-downloads').onclick=()=>{ const newest=Veluno.downloadSummary(currentState.download_items||[]).newest; if(newest!=null) Veluno.send('reveal_download',{id:newest}); };
 $('dismiss-update').onclick=()=>{ const version=currentState.update_available?.version; if(version) { currentState.dismissed_update_version=version; $('update-banner').hidden=true; Veluno.send('dismiss_update',{version}); } };
 $('btn-downloads').onclick=()=>Veluno.send('toggle_downloads');
 $('btn-default-browser').onclick=()=>Veluno.send('default_browser');

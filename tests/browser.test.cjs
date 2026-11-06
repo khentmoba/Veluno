@@ -54,6 +54,14 @@ assert.equal(marks('aaa','aa'),'[aa]a','overlapping hits advance past the match'
 assert.equal(marks('Nothing','zzz'),'Nothing','a miss leaves the title whole');
 assert.equal(marks('Anything',''),'Anything','an empty query marks nothing');
 assert.equal(marks('a.b','.'),'a[.]b','punctuation matches literally');
+const summary=window.Veluno.downloadSummary;
+assert.equal(summary([]).label,'','an empty list has no summary');
+assert.equal(summary([{id:1,status:'complete',received:1048576}]).label,'1 file · 1.0 MB');
+assert.equal(summary([{id:1,status:'complete',received:1048576},{id:2,status:'complete',received:1048576}]).label,'2 files · 2.0 MB');
+assert.equal(summary([{id:3,status:'downloading',received:5,total:10}]).count,0,'a transfer in progress is not a saved file');
+assert.equal(summary([{id:4,status:'downloading',received:9,total:9}]).count,1,'a finished transfer counts as saved');
+assert.equal(summary([{id:4,status:'complete',received:1},{id:5,status:'complete',received:2}]).newest,5,'the newest finished download drives Show folder');
+assert.equal(summary([{id:6,status:'cancelled',received:3}]).count,0);
 const keywordOption=suggest('@yt cats',sources)[0];
 assert.equal(keywordOption.url,'https://www.youtube.com/results?search_query=cats','Keyword searches lead suggestions');
 assert.equal(keywordOption.detail,'Search YouTube');
