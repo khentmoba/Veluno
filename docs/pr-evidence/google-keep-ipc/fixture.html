@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Keep-style ipc fixture</title>
+<style>
+  :root { color-scheme: dark }
+  body { margin: 0; font: 16px "Segoe UI", system-ui, sans-serif; background: #0c0c0e; color: #f5f5f7 }
+  header { display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 24px; border-bottom: 1px solid #2a2a30; font-weight: 600 }
+  main { padding: 32px 24px }
+  h1 { margin: 0 0 12px; font-size: 22px }
+  p { margin: 0; color: #b2b2b8 }
+  #result.ok { color: #7ee0a1 }
+  #result.bad { color: #ff9fb7 }
+</style>
+<header><span>Keep</span></header>
+<main>
+  <h1 id="result">…</h1>
+  <p id="detail"></p>
+</main>
+<script>
+  // Google Keep's instrumentation installs a global `ipc` function and calls it while starting up.
+  // A browser that already owns a non-writable `window.ipc` makes this assignment fail silently,
+  // so the call throws and the page never renders its content, exactly as Keep does.
+  window.ipc = function (logger, name) {
+    window.__ipcCalls = (window.__ipcCalls || 0) + 1;
+  };
+  const result = document.getElementById('result');
+  try {
+    window.ipc(null, 'Preload user info');
+    result.textContent = 'App initialised';
+    result.className = 'ok';
+  } catch (error) {
+    result.textContent = 'App failed: ' + error.message;
+    result.className = 'bad';
+  }
+  document.getElementById('detail').textContent = 'typeof window.ipc = ' + typeof window.ipc;
+</script>
+</html>

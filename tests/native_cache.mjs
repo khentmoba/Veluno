@@ -74,7 +74,7 @@ try {
     };
     request.onerror = () => reject(request.error);
   })`), 'kept');
-  await page.evaluate('window.reloadMarker="kept";window.ipc.postMessage(JSON.stringify({action:"reload_fresh"}));true');
+  await page.evaluate('window.reloadMarker="kept";window.chrome.webview.postMessage(JSON.stringify({action:"reload_fresh"}));true');
   await new Promise(resolve => setTimeout(resolve, 200));
   assert.equal(await page.evaluate('window.reloadMarker'), 'kept', 'page IPC cannot trigger a fresh reload');
   await page.evaluate('caches.open("healthy-cache").then(cache=>cache.put("/keep",new Response("kept")))');
