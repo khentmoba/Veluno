@@ -1,6 +1,6 @@
 {
-  "version": "0.3.4",
-  "release_url": "https://github.com/khentmoba/Veluno/releases/tag/v0.3.4",
-  "download_url": "https://github.com/khentmoba/Felaris/releases/download/v0.3.4/felaris.exe",
-  "summary": "- Block ads and trackers using Brave's adblock engine and list catalog, updated daily in the background.\n- Switch to full uBlock Origin in WebView2 with protection against cookie banners, app prompts, and link tracking.\n- Upgrade existing profiles automatically from uBlock Origin Lite to full uBlock Origin.\n- Recover interrupted YouTube watch pages automatically instead of stalling on skeleton placeholders.\n- Skip re-indexing installed extensions on startup and tab creation.\n- Show \"Veluno is up to date\" as an expiring toast instead of keeping it pinned in the sidebar.\n- Separate sidebar feedback rows with clean borders and replace tab restore with a compact Undo button."
+  "version": "0.3.5",
+  "release_url": "https://github.com/khentmoba/Veluno/releases/tag/v0.3.5",
+  "download_url": "https://github.com/khentmoba/Felaris/releases/download/v0.3.5/felaris.exe",
+  "summary": "- Alt+Click any link to preview it in a floating Glance window, with options to dismiss or keep it as a tab.\n- View two tabs side by side with Split View from the tab context menu.\n- Dock any website into a collapsible side panel that persists across sessions.\n- Type @keywords like @yt, @gh, and @maps in the address bar to search sites directly.\n- Fullscreen videos now expand across the entire monitor without borders or sidebar intrusion.\n- Toggle downloads with Ctrl+J, open completed files directly, and clear finished items.\n- Save bandwidth and memory with Data Saver mode, larger disk caches, and background tab memory trimming.\n- Customize the UI with accent color choices, emoji workspace icons, and right-side sidebar placement.\n- Show visited site logos in history suggestions and automatically exit when closing the last tab."
 }
