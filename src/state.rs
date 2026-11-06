@@ -490,6 +490,14 @@ impl BrowserState {
         ids.len()
     }
 
+    /// Restores a closed tab by recency: 0 is the tab closed most recently.
+    pub fn restore_closed_at(&mut self, index: usize) -> Option<usize> {
+        let position = self.closed_tabs.len().checked_sub(index + 1)?;
+        let tab = self.closed_tabs.remove(position);
+        self.closed_tabs.push(tab);
+        self.restore_closed_tab()
+    }
+
     pub fn restore_closed_tab(&mut self) -> Option<usize> {
         if let Some(mut tab) = self.closed_tabs.pop() {
             tab.id = self.allocate_tab_id();
@@ -1302,6 +1310,25 @@ mod tests {
         );
         assert_eq!(state.active_tab_id, second);
         assert_eq!(state.closed_tabs.len(), 2, "both closes are restorable");
+    }
+
+    #[test]
+    fn a_specific_closed_tab_can_be_reopened() {
+        let mut state = BrowserState::new();
+        let first = state.add_tab(Some("https://example.com/first".into()), false);
+        let second = state.add_tab(Some("https://example.com/second".into()), false);
+        state.close_tab(first);
+        state.close_tab(second);
+        assert_eq!(state.closed_tabs.len(), 2);
+        let reopened = state.restore_closed_at(1).unwrap();
+        assert_eq!(
+            state.tabs.iter().find(|tab| tab.id == reopened).unwrap().url,
+            "https://example.com/first",
+            "index 1 is the older of the two closed tabs"
+        );
+        assert_eq!(state.closed_tabs.len(), 1);
+        assert!(state.restore_closed_at(5).is_none(), "an out-of-range index is ignored");
+        assert_eq!(state.closed_tabs.len(), 1, "a failed restore keeps the list");
     }
 
     #[test]

@@ -78,6 +78,9 @@ pub enum Command {
         id: usize,
     },
     RestoreClosedTab,
+    RestoreClosedTabAt {
+        index: usize,
+    },
     TogglePin {
         id: usize,
     },
@@ -1935,6 +1938,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             },
                             Command::SwitchWorkspace { id } => { state.switch_workspace(id); },
                             Command::RestoreClosedTab => { state.restore_closed_tab(); },
+                            Command::RestoreClosedTabAt { index } => { state.restore_closed_at(index); },
                             Command::NewPrivateTab => { state.open_private_tab(); palette_open = false; },
                             Command::ToggleBookmark { url } => state.toggle_bookmark(url),
                             Command::TogglePin { id } => state.toggle_pin(id),

@@ -85,7 +85,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 .tab.drop-before::before,.tab.drop-after::after { content:""; position:absolute; left:8px; right:8px; height:2px; background:var(--accent); pointer-events:none; }
 .tab.drop-before::before { top:-3px; } .tab.drop-after::after { bottom:-3px; } .tab.dragging { opacity:.5; }
 .tab-loading { width:12px; height:12px; flex-shrink:0; border-radius:50%; border:2px solid var(--line); border-top-color:var(--accent); animation:tab-spin 700ms linear infinite; } @keyframes tab-spin { to { transform:rotate(360deg); } } @media (prefers-reduced-motion:reduce) { .tab-loading { animation:none; border-top-color:var(--accent); } } .audio-toggle { width:26px; height:28px; flex-shrink:0; display:grid; place-items:center; color:var(--text); } .audio-toggle svg { width:15px; }
-.workspace-actions { border-top:1px solid var(--line); margin-top:4px; padding-top:4px; }
+.workspace-actions { border-top:1px solid var(--line); margin-top:4px; padding-top:4px; } #recently-closed { display:flex; flex-direction:column; gap:2px; padding:4px 0; } #recently-closed::before { content:"Recently closed"; display:block; padding:2px 10px; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); } .recently-closed { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #delete-workspace-panel { padding:8px; font-size:12px; } #workspace-destination { width:100%; margin-top:8px; padding:8px; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:6px; font:inherit; }
 .site-panel { position:absolute; top:48px; left:0; width:100%; max-height:calc(100vh - 110px); overflow:auto; padding:12px; background:var(--surface); border:1px solid var(--line); border-radius:10px; z-index:25; font-size:12px; }
 .site-heading { display:flex; align-items:center; justify-content:space-between; } .site-panel p { color:var(--muted); line-height:1.5; margin:10px 0; } #site-origin { color:var(--text); overflow-wrap:anywhere; user-select:text; }
@@ -159,7 +159,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 <div class="workspace-switcher"><details id="profiles"><summary aria-label="Switch workspace"><svg aria-hidden="true"><use href="#globe"/></svg><span id="profile-current">General</span></summary><div class="menu"><p>Workspaces</p><div id="spaces" aria-label="Workspaces"></div><div id="workspace-emojis" role="group" aria-label="Workspace icon"></div><form id="profile-form"><label for="profile-name">New workspace</label><input id="profile-name" placeholder="e.g. School" maxlength="40" required autocomplete="off"><small>Workspaces organize tabs and pins. Website logins are shared.</small><p id="profile-error" role="alert" hidden></p><button type="submit">Create workspace</button></form><div class="workspace-actions"><button type="button" id="rename-workspace">Rename workspace</button><button type="button" id="delete-workspace">Delete workspace</button></div>
 <div id="delete-workspace-panel" hidden><label for="workspace-destination">Move tabs and pins to</label><select id="workspace-destination"></select><p>Tabs stay open. Shared website data is kept.</p><button type="button" id="confirm-delete-workspace">Move tabs and delete workspace</button><button type="button" id="cancel-delete-workspace">Cancel</button></div>
 <button type="button" id="cancel-rename-workspace" hidden>Cancel rename</button>
-</div></details><details id="browser-menu"><summary class="icon" title="Tab actions" aria-label="Tab actions"><svg><use href="#more"/></svg></summary><div class="menu"><button id="btn-pin-tab">Pin current tab</button><button id="btn-reopen-tab">Reopen closed tab <kbd>Ctrl Shift T</kbd></button><button id="btn-clear-tabs">Close other unpinned tabs</button><hr><button id="btn-check-update">Check for updates</button><button id="btn-default-browser">Set default browser?</button><hr><p>Workspaces: Alt + 1-9<br>Address bar: Ctrl + L<br>Toggle sidebar: Ctrl + Shift + B<br>Bookmark page: Ctrl + D<br>Find in page: Ctrl + F</p></div></details></div>
+</div></details><details id="browser-menu"><summary class="icon" title="Tab actions" aria-label="Tab actions"><svg><use href="#more"/></svg></summary><div class="menu"><button id="btn-pin-tab">Pin current tab</button><button id="btn-reopen-tab">Reopen closed tab <kbd>Ctrl Shift T</kbd></button><button id="btn-clear-tabs">Close other unpinned tabs</button><div id="recently-closed" hidden></div><hr><button id="btn-check-update">Check for updates</button><button id="btn-default-browser">Set default browser?</button><hr><p>Workspaces: Alt + 1-9<br>Address bar: Ctrl + L<br>Toggle sidebar: Ctrl + Shift + B<br>Bookmark page: Ctrl + D<br>Find in page: Ctrl + F</p></div></details></div>
 </footer>
 <div class="menu" id="tab-context-menu" role="menu" aria-label="Tab options" hidden></div>
 <svg style="display:none" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -371,6 +371,17 @@ window.updateState = state => {
  $('btn-pin-tab').textContent=active?.is_pinned?'Unpin current tab':'Pin current tab';
  $('btn-pin-tab').title='Pinned tabs stay awake during automatic tab sleeping';
  $('btn-reopen-tab').disabled=!state.can_restore_closed_tab;
+ const closed=(state.closed_tabs||[]).slice(-5).reverse();
+ const closedSignature=JSON.stringify(closed.map(tab=>[tab.id,tab.title,tab.url]));
+ if($('recently-closed').dataset.signature!==closedSignature) {
+  $('recently-closed').dataset.signature=closedSignature;
+  $('recently-closed').replaceChildren(...closed.map((tab,index)=>{
+   const button=document.createElement('button'); button.className='recently-closed'; button.textContent=tab.title||tab.url; button.title='Reopen '+(tab.url||tab.title);
+   button.onclick=()=>{ Veluno.send('restore_closed_tab_at',{index}); $('browser-menu').open=false; };
+   return button;
+  }));
+ }
+ $('recently-closed').hidden=!closed.length;
  $('downloads-panel').hidden=!state.downloads_open;
  $('btn-downloads').setAttribute('aria-expanded',String(!!state.downloads_open));
  if(JSON.stringify(previous.download_items)!==JSON.stringify(state.download_items)) {
