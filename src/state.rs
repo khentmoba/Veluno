@@ -305,9 +305,24 @@ impl BrowserState {
         Some(state)
     }
 
+    /// The next free tab id. Never overflows and never reuses a live tab's id.
+    fn allocate_tab_id(&mut self) -> usize {
+        if self.next_tab_id < usize::MAX - 1
+            && !self.tabs.iter().any(|tab| tab.id == self.next_tab_id)
+        {
+            let id = self.next_tab_id;
+            self.next_tab_id += 1;
+            return id;
+        }
+        let id = (1..=usize::MAX - 2)
+            .find(|id| !self.tabs.iter().any(|tab| tab.id == *id))
+            .unwrap_or(self.active_tab_id);
+        self.next_tab_id = id.saturating_add(1);
+        id
+    }
+
     pub fn add_tab(&mut self, url: Option<String>, is_pinned: bool) -> usize {
-        let id = self.next_tab_id;
-        self.next_tab_id += 1;
+        let id = self.allocate_tab_id();
         let target_url = url
             .map(|value| crate::profile::normalize_url(&value).unwrap_or(value))
             .unwrap_or_else(|| self.homepage.clone());
@@ -424,8 +439,7 @@ impl BrowserState {
 
     pub fn restore_closed_tab(&mut self) -> Option<usize> {
         if let Some(mut tab) = self.closed_tabs.pop() {
-            tab.id = self.next_tab_id;
-            self.next_tab_id += 1;
+            tab.id = self.allocate_tab_id();
             tab.is_sleeping = false;
             tab.is_loading = false;
             tab.can_go_back = false;
@@ -757,8 +771,7 @@ impl BrowserState {
     pub fn duplicate_tab(&mut self, tab_id: usize) -> Option<usize> {
         let index = self.tabs.iter().position(|tab| tab.id == tab_id)?;
         let source = self.tabs[index].clone();
-        let id = self.next_tab_id;
-        self.next_tab_id += 1;
+        let id = self.allocate_tab_id();
         let copy = Tab {
             id,
             workspace_id: source.workspace_id,
@@ -1156,6 +1169,26 @@ mod tests {
             .unwrap()
             .workspace_id;
         assert!(state.set_workspace_emoji(private, "\u{1F4DA}").is_err());
+    }
+
+    #[test]
+    fn tab_ids_never_overflow_or_collide() {
+        let mut state = BrowserState::new();
+        state.next_tab_id = usize::MAX - 1;
+        let added = state.add_tab(Some("https://example.com/a".into()), false);
+        assert_ne!(added, usize::MAX - 1);
+        assert_eq!(
+            state.tabs.iter().filter(|tab| tab.id == added).count(),
+            1,
+            "a saturated counter still hands out a free id"
+        );
+        state.next_tab_id = usize::MAX - 1;
+        let copy = state.duplicate_tab(state.active_tab_id).unwrap();
+        assert_eq!(state.tabs.iter().filter(|tab| tab.id == copy).count(), 1);
+        state.next_tab_id = usize::MAX - 1;
+        state.close_tab(added);
+        let restored = state.restore_closed_tab().unwrap();
+        assert_eq!(state.tabs.iter().filter(|tab| tab.id == restored).count(), 1);
     }
 
     #[test]
