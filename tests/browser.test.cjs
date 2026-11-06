@@ -122,6 +122,7 @@ assert.deepEqual(press('N', { ctrlKey: true, shiftKey: true }), { action: 'new_p
 assert.deepEqual(press('d', { ctrlKey: true }), { action: 'toggle_bookmark' });
 assert.deepEqual(press('l', { ctrlKey: true }), { action: 'focus_address' });
 assert.deepEqual(press('j', { ctrlKey: true }), { action: 'open_downloads' });
+assert.deepEqual(press('f', { ctrlKey: true }), { action: 'find_in_page' });
 assert.deepEqual(press('w', { ctrlKey: true }), { action: 'close_active_tab' });
 assert.deepEqual(press('Tab', { ctrlKey: true, shiftKey: true }), { action: 'cycle_tab', backwards: true });
 assert.deepEqual(press('Tab', { ctrlKey: true, shiftKey: false }), { action: 'cycle_tab', backwards: false });
@@ -152,6 +153,8 @@ assert.equal(altClick('/docs', { ctrlKey: true }), false, 'Ctrl+Alt+Click is lef
 assert.equal(altClick('/docs', { isTrusted: false }), false, 'Synthetic clicks cannot open Glance');
 assert.equal(messages.length, 0);
 new vm.Script(fs.readFileSync('src/reader.js', 'utf8'), { filename: 'src/reader.js' });
+new vm.Script(fs.readFileSync('src/find.js', 'utf8'), { filename: 'src/find.js' });
+assert.ok(fs.readFileSync('src/find.js', 'utf8').includes('window.find'), 'the find bar drives the built-in search');
 vm.runInContext("Object.prototype.toJSON = function () { throw Error('page serialization hook'); }", context);
 assert.deepEqual(press('t', { ctrlKey: true }), { action: 'new_tab' });
 keydown({ key: 't', ctrlKey: true, isTrusted: true, isComposing: true });

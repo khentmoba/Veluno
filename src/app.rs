@@ -182,6 +182,7 @@ pub enum Command {
     ImportBookmarks {
         browser: String,
     },
+    FindInPage,
     ToggleReader,
     Screenshot,
     Zoom {
@@ -2088,6 +2089,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                     },
                                     Err(error) => error,
                                 });
+                            },
+                            Command::FindInPage => if let Some(view) = views.get(&state.active_tab_id) {
+                                let _ = view.evaluate_script(include_str!("find.js"));
                             },
                             Command::ToggleReader => if let Some(tab) = state.active_tab() {
                                 if profile::web_origin(&tab.url).is_none() || tab.error.is_some() {
