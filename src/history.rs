@@ -110,12 +110,18 @@ pub fn visit(url: &str, title: &str, favicon: Option<&str>) {
 
 /// The page title usually arrives after the visit is recorded, so match the row by URL.
 pub fn retitle(url: &str, title: &str) {
-    let mut entries = log();
-    if let Some(entry) = entries.iter_mut().find(|entry| entry.url == url)
-        && entry.title != title
-    {
-        entry.title = title.into();
+    if retitle_entry(&mut log(), url, title) {
         changed();
+    }
+}
+
+fn retitle_entry(entries: &mut [Entry], url: &str, title: &str) -> bool {
+    match entries.iter_mut().find(|entry| entry.url == url) {
+        Some(entry) if entry.title != title => {
+            entry.title = title.into();
+            true
+        }
+        _ => false,
     }
 }
 
@@ -210,13 +216,16 @@ mod tests {
     }
 
     #[test]
-    fn a_late_title_reaches_the_row_even_after_another_visit() {
+    fn a_late_title_reaches_its_row_after_another_visit() {
         let mut entries = Vec::new();
         record(&mut entries, "https://a.test/", "", 1, None);
         record(&mut entries, "https://b.test/", "B", 2, None);
         assert_eq!(entries[0].url, "https://b.test/");
-        let late = entries.iter_mut().find(|entry| entry.url == "https://a.test/");
-        assert!(late.is_some(), "the earlier visit is still recorded");
+        assert!(retitle_entry(&mut entries, "https://a.test/", "A"));
+        assert_eq!(entries[1].title, "A", "the older row takes its late title");
+        assert_eq!(entries[0].title, "B", "the newest row is untouched");
+        assert!(!retitle_entry(&mut entries, "https://a.test/", "A"));
+        assert!(!retitle_entry(&mut entries, "https://missing.test/", "X"));
     }
 
     #[test]

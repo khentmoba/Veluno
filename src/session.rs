@@ -29,7 +29,12 @@ impl SessionWriter {
                 };
                 let result = (|| {
                     if let Some(previous) = &previous {
-                        profile::write_atomic(&path.with_extension("json.bak"), previous)?;
+                        let backup = path.with_extension("json.bak");
+                        // Keep the generation before the backup so one bad write cannot lose both.
+                        if let Ok(older) = std::fs::read(&backup) {
+                            let _ = profile::write_atomic(&path.with_extension("json.bak2"), &older);
+                        }
+                        profile::write_atomic(&backup, previous)?;
                     }
                     profile::write_atomic(&path, &bytes)?;
                     previous = Some(bytes);
@@ -83,7 +88,23 @@ mod tests {
         assert_eq!(restored.active_tab_id, latest);
         let backup = std::fs::read_to_string(path.with_extension("json.bak")).unwrap();
         assert_eq!(BrowserState::from_session(&backup).unwrap().tabs.len(), 1);
+        // A second flush rotates the first backup into the older generation.
+        let newest = state.add_tab(Some("https://example.com/newest".into()), false);
+        writer.flush(&state).unwrap();
+        let older = std::fs::read_to_string(path.with_extension("json.bak2")).unwrap();
+        assert_eq!(
+            BrowserState::from_session(&older).unwrap().active_tab_id,
+            latest,
+            "the older generation still restores"
+        );
+        assert_eq!(
+            BrowserState::from_session(&std::fs::read_to_string(&path).unwrap())
+                .unwrap()
+                .active_tab_id,
+            newest
+        );
         drop(writer);
+        std::fs::remove_file(path.with_extension("json.bak2")).unwrap();
         std::fs::remove_file(path.with_extension("json.bak")).unwrap();
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(directory).unwrap();
