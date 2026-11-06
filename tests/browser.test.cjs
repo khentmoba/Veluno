@@ -181,6 +181,8 @@ for (const file of ['src/ui.html', 'src/start_page.html', 'src/new_tab.html', 's
 const uiHtml = fs.readFileSync('src/ui.html', 'utf8');
 assert.ok(/submitAddress\(true\)/.test(uiHtml), 'Ctrl+Enter opens the address in a new tab');
 assert.ok(uiHtml.includes('submitAddress(newTab=false)'), 'the address submit knows about new tabs');
+assert.ok(uiHtml.includes('autoScrollTabs(e.clientY)'), 'dragging near an edge scrolls the tab list');
+assert.ok(/function autoScrollTabs/.test(uiHtml), 'the tab list has an auto-scroll helper');
 const startPage = fs.readFileSync('src/start_page.html', 'utf8');
 assert.ok(/ctrlKey\|\|event\.altKey\) Veluno\.send\('new_tab'/.test(startPage), 'Ctrl+Enter on the start page opens a new tab');
 assert.ok(uiHtml.includes('MB'), 'src/ui.html must format download size in MB');

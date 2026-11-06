@@ -184,6 +184,14 @@ const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
 let draggedTab=null;
 const clearDropMarkers=()=>document.querySelectorAll('.drop-before,.drop-after').forEach(row=>row.classList.remove('drop-before','drop-after'));
 function clearDrag() { draggedTab=null; clearDropMarkers(); document.querySelectorAll('.dragging').forEach(row=>row.classList.remove('dragging')); }
+// Dragging near an edge scrolls the list so a tab can reach a row that is off screen.
+function autoScrollTabs(clientY) {
+ const list=document.querySelector('.tabs');
+ if(!list) return;
+ const rect=list.getBoundingClientRect(), edge=28, stepSize=14;
+ if(clientY<rect.top+edge) list.scrollTop-=stepSize;
+ else if(clientY>rect.bottom-edge) list.scrollTop+=stepSize;
+}
 function moveTab(tab,down) {
  const peers=currentState.tabs.filter(t=>t.workspace_id===tab.workspace_id&&t.is_pinned===tab.is_pinned);
  const target=peers[peers.findIndex(t=>t.id===tab.id)+(down?1:-1)];
@@ -267,7 +275,7 @@ function renderTabs() {
   }
   row.draggable=true;
   row.ondragstart=e=>{ if(e.target.closest('.close-tab,.audio-toggle')) { e.preventDefault(); return; } draggedTab=tab.id; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',String(tab.id)); row.classList.add('dragging'); };
-  row.ondragover=e=>{ const source=currentState.tabs.find(t=>t.id===draggedTab); if(!source||source.id===tab.id||source.workspace_id!==tab.workspace_id||source.is_pinned!==tab.is_pinned)return; e.preventDefault(); clearDropMarkers(); row.classList.add(e.clientY>row.getBoundingClientRect().top+row.offsetHeight/2?'drop-after':'drop-before'); e.dataTransfer.dropEffect='move'; };
+  row.ondragover=e=>{ const source=currentState.tabs.find(t=>t.id===draggedTab); if(!source||source.id===tab.id||source.workspace_id!==tab.workspace_id||source.is_pinned!==tab.is_pinned)return; e.preventDefault(); autoScrollTabs(e.clientY); clearDropMarkers(); row.classList.add(e.clientY>row.getBoundingClientRect().top+row.offsetHeight/2?'drop-after':'drop-before'); e.dataTransfer.dropEffect='move'; };
   row.ondrop=e=>{ e.preventDefault(); const after=e.clientY>row.getBoundingClientRect().top+row.offsetHeight/2; if(draggedTab!=null)Veluno.send('reorder_tab',{id:draggedTab,target:tab.id,after}); clearDrag(); };
   row.ondragend=clearDrag;
 
