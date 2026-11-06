@@ -186,6 +186,7 @@ pub enum Command {
         browser: String,
     },
     FindInPage,
+    FocusTabSearch,
     ToggleReader,
     Screenshot,
     Zoom {
@@ -2097,6 +2098,10 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                     },
                                     Err(error) => error,
                                 });
+                            },
+                            Command::FocusTabSearch => {
+                                state.sidebar_collapsed = false;
+                                let _ = sidebar.evaluate_script("window.focusTabSearch?.()");
                             },
                             Command::FindInPage => if let Some(view) = views.get(&state.active_tab_id) {
                                 let _ = view.evaluate_script(include_str!("find.js"));

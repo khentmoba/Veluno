@@ -424,6 +424,7 @@ window.updateState = state => {
   else { $('activity-message').textContent=state.update_status; $('activity-message').setAttribute('aria-expanded','false'); $('activity').hidden=false; }
  }
 };
+window.focusTabSearch=()=>{ $('tab-search').hidden=false; $('btn-search-tabs').setAttribute('aria-expanded','true'); $('tab-search').focus(); $('tab-search').select(); };
 window.focusAddress=()=>{ let tries=0; const focus=()=>{ $('url-input').focus(); $('url-input').select(); if(document.activeElement!==$('url-input')&&++tries<10) setTimeout(focus,50); }; focus(); };
 for(const [id,action] of Object.entries({'btn-back':'back','btn-forward':'forward','btn-reload':'reload','btn-add-tab':'new_tab','btn-toggle-sidebar':'toggle_sidebar','btn-reopen-tab':'restore_closed_tab'})) $(id).onclick=()=>Veluno.send(action);
 $('btn-reload').onclick=()=>Veluno.send(currentState.is_loading?'stop':'reload');

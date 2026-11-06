@@ -182,6 +182,7 @@
       else if (key === 'd' && !event.shiftKey) action = 'toggle_bookmark';
       else if (key === 'w' && !event.shiftKey) action = 'close_active_tab';
       else if (key === 'l' && !event.shiftKey) action = 'focus_address';
+      else if (key === 'f' && event.shiftKey) action = 'focus_tab_search';
       else if (key === 'f' && !event.shiftKey) action = 'find_in_page';
       else if (key === 'j' && !event.shiftKey) action = 'open_downloads';
       else if (key === 'h' && !event.shiftKey) action = 'open_history';
