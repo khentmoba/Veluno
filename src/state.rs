@@ -1322,13 +1322,25 @@ mod tests {
         assert_eq!(state.closed_tabs.len(), 2);
         let reopened = state.restore_closed_at(1).unwrap();
         assert_eq!(
-            state.tabs.iter().find(|tab| tab.id == reopened).unwrap().url,
+            state
+                .tabs
+                .iter()
+                .find(|tab| tab.id == reopened)
+                .unwrap()
+                .url,
             "https://example.com/first",
             "index 1 is the older of the two closed tabs"
         );
         assert_eq!(state.closed_tabs.len(), 1);
-        assert!(state.restore_closed_at(5).is_none(), "an out-of-range index is ignored");
-        assert_eq!(state.closed_tabs.len(), 1, "a failed restore keeps the list");
+        assert!(
+            state.restore_closed_at(5).is_none(),
+            "an out-of-range index is ignored"
+        );
+        assert_eq!(
+            state.closed_tabs.len(),
+            1,
+            "a failed restore keeps the list"
+        );
     }
 
     #[test]
