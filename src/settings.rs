@@ -175,13 +175,32 @@ pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
         }
         _ => return Err(format!("Unknown setting: {key}")),
     }
-    let bytes = serde_json::to_vec_pretty(&settings).map_err(|error| error.to_string())?;
-    crate::profile::write_atomic(&path(), &bytes).map_err(|error| error.to_string())?;
+    save(&settings)?;
     current()
         .lock()
         .expect("settings mutex should never be poisoned")
         .clone_from(&settings);
     Ok(settings)
+}
+
+fn save(settings: &Settings) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(settings).map_err(|error| error.to_string())?;
+    crate::profile::write_atomic(&path(), &bytes).map_err(|error| error.to_string())
+}
+
+/// Restores every setting to its default. Tabs, bookmarks, and history are untouched.
+pub fn reset() -> Result<Settings, String> {
+    reset_with(save)
+}
+
+fn reset_with(write: impl FnOnce(&Settings) -> Result<(), String>) -> Result<Settings, String> {
+    let defaults = Settings::default();
+    write(&defaults)?;
+    current()
+        .lock()
+        .expect("settings mutex should never be poisoned")
+        .clone_from(&defaults);
+    Ok(defaults)
 }
 
 #[cfg(test)]
@@ -199,6 +218,24 @@ mod tests {
         assert!(!settings.sidebar_right);
         assert!(!settings.data_saver);
         assert!(!settings.performance_mode);
+    }
+
+    #[test]
+    fn resetting_writes_and_returns_every_default() {
+        let mut written = None;
+        let defaults = reset_with(|settings| {
+            written = Some(settings.clone());
+            Ok(())
+        })
+        .unwrap();
+        let written = written.unwrap();
+        assert_eq!(written.accent, "neutral");
+        assert_eq!(written.search_engine, "brave");
+        assert!(written.save_history && written.ad_blocker && written.auto_update);
+        assert_eq!(defaults.tracking_prevention, "balanced");
+        assert!(!defaults.save_passwords && defaults.autofill);
+        assert!(!defaults.sidebar_right && !defaults.data_saver && !defaults.performance_mode);
+        assert!(reset_with(|_| Err("disk full".into())).is_err());
     }
 
     #[test]

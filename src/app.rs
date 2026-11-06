@@ -168,6 +168,7 @@ pub enum Command {
         key: String,
         value: serde_json::Value,
     },
+    ResetSettings,
     InstallAdBlocker,
     OpenExtensionsFolder,
     ClearBrowsingData {
@@ -2031,6 +2032,18 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                     }
                                 },
                                 Err(error) => { state.update_status = Some(error); },
+                            },
+                            Command::ResetSettings => match settings::reset() {
+                                Ok(current) => {
+                                    let script = ui::accent_script();
+                                    for view in [&sidebar, &palette, &topbar, &popup_bar] { let _ = view.evaluate_script(&script); }
+                                    for tab in state.tabs.iter().filter(|tab| profile::is_internal(&tab.url)) {
+                                        if let Some(view) = views.get(&tab.id) { let _ = view.evaluate_script(&script); }
+                                    }
+                                    let _ = sidebar.evaluate_script(&format!("document.body.classList.toggle('right',{})", current.sidebar_right));
+                                    state.update_status = Some("Settings were reset to their defaults. Restart Veluno to apply the search engine and ad blocker everywhere.".into());
+                                },
+                                Err(error) => { state.update_status = Some(format!("Could not reset settings: {error}")); },
                             },
                             Command::InstallAdBlocker => { start_ad_blocker_install(&proxy); },
                             Command::ClearBrowsingData { range, kinds } => if let Some((range, label)) = clear_range(&range) {

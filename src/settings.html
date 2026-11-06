@@ -101,6 +101,7 @@ select { font:inherit; font-size:13px; color:var(--text); background:var(--activ
 
 <section data-section="about" data-label="About Veluno" data-icon="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 8v5m0-8.5v.01">
 <div class="row"><div><h2>Veluno</h2><p id="version"></p></div><button class="btn" data-send="check_updates">Check for updates</button></div>
+<div class="row"><div><h2>Reset settings</h2><p>Restores every setting on this page to its default. Tabs, bookmarks, history, and downloaded files are kept.</p></div><button class="btn" id="reset-settings">Reset settings</button></div>
 <p class="note">A lightweight browser built in Rust on Microsoft Edge WebView2.</p>
 </section>
 <p class="empty" id="no-match" hidden>No settings match your search.</p>
@@ -152,6 +153,7 @@ $('find').oninput=()=>show(current);
 $('find').onkeydown=e=>{ if(e.key==='Escape') { $('find').value=''; show(current); } };
 document.addEventListener('keydown',e=>{ if(e.ctrlKey&&!e.shiftKey&&!e.altKey&&e.key.toLowerCase()==='f') { e.preventDefault(); $('find').focus(); } });
 document.querySelectorAll('[data-send]').forEach(button=>button.onclick=()=>{ if(button.dataset.send==='clear_history'&&!confirm('Clear all browsing history?'))return; Veluno.send(button.dataset.send); });
+document.getElementById('reset-settings').onclick=()=>{ if(!confirm('Reset every setting to its default?')) return; Veluno.send('reset_settings'); };
 function setting(key,value) { Veluno.send('set_setting',{key,value}); data.settings[key]=value; }
 function toggle(id,key) {
  const button=$(id); button.setAttribute('aria-checked',String(!!data.settings[key]));
