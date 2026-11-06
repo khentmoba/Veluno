@@ -125,6 +125,17 @@
     if(fallback) options.push(fallback);
     return options.sort((a,b)=>b.score-a.score).map(item=>item.option);
   }
+  // The blurred address: an HTTPS page shows its host, and a non-default port stays visible.
+  function displayAddress(url) {
+    if (!url || url === 'veluno://newtab') return '';
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') return url;
+      return parsed.port ? parsed.hostname + ':' + parsed.port : parsed.hostname;
+    } catch {
+      return url;
+    }
+  }
   // Splits text into matched and unmatched runs so the sidebar can mark a tab-search hit.
   function highlight(text, query) {
     const value = String(text ?? '');
@@ -155,7 +166,7 @@
         : '',
     };
   }
-  window.Veluno = { send, resolveAddress, suggestions, highlight, downloadSummary, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
+  window.Veluno = { send, resolveAddress, suggestions, highlight, downloadSummary, displayAddress, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
   const postShortcut = post;
   const stringify = JSON.stringify;
   window.addEventListener('keydown', event => {

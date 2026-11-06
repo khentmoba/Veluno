@@ -2078,14 +2078,18 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::ImportBookmarks { browser } => {
                                 let name = crate::import::name(&browser).unwrap_or("that browser");
                                 state.update_status = Some(match crate::import::read(&browser) {
-                                    Ok(found) => {
+                                    Ok((found, skipped)) => {
                                         let total = found.len();
-                                        match state.import_bookmarks(found) {
+                                        let mut message = match state.import_bookmarks(found) {
                                             0 if total == 0 => format!("{name} has no web bookmarks to import."),
                                             0 => format!("All {total} bookmarks from {name} are already in Veluno."),
                                             1 => format!("Imported 1 bookmark from {name}."),
                                             added => format!("Imported {added} bookmarks from {name}."),
+                                        };
+                                        if skipped > 0 {
+                                            message.push_str(&format!(" Skipped {skipped} non-web {}.", if skipped == 1 { "link" } else { "links" }));
                                         }
+                                        message
                                     },
                                     Err(error) => error,
                                 });

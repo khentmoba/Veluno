@@ -68,13 +68,15 @@ pub fn name(id: &str) -> Option<&'static str> {
 }
 
 /// Every web bookmark from all of the browser's profiles, folders flattened, first copy kept.
-pub fn read(id: &str) -> Result<Vec<Bookmark>, String> {
+/// The second value counts links that were not web pages, such as `javascript:` entries.
+pub fn read(id: &str) -> Result<(Vec<Bookmark>, usize), String> {
     let name = name(id).ok_or("Unknown browser.")?;
     let files = files(id);
     if files.is_empty() {
         return Err(format!("No {name} bookmarks were found on this computer."));
     }
     let mut bookmarks = Vec::new();
+    let mut skipped = 0;
     let mut read_any = false;
     for file in files {
         // The browser may be running; its bookmarks file is still readable.
@@ -82,7 +84,7 @@ pub fn read(id: &str) -> Result<Vec<Bookmark>, String> {
             && let Ok(tree) = serde_json::from_str::<Value>(&json)
         {
             read_any = true;
-            collect(&tree, &mut bookmarks);
+            collect(&tree, &mut bookmarks, &mut skipped);
         }
     }
     if !read_any {
@@ -90,7 +92,7 @@ pub fn read(id: &str) -> Result<Vec<Bookmark>, String> {
     }
     let mut seen = std::collections::HashSet::new();
     bookmarks.retain(|bookmark| seen.insert(bookmark.url.clone()));
-    Ok(bookmarks)
+    Ok((bookmarks, skipped))
 }
 
 fn files(id: &str) -> Vec<PathBuf> {
@@ -142,18 +144,18 @@ fn profile_files(base: &Path, profiles: bool) -> Vec<PathBuf> {
 }
 
 /// Walks the `roots` of a Chromium bookmarks file in bar, other, then mobile order.
-fn collect(tree: &Value, out: &mut Vec<Bookmark>) {
+fn collect(tree: &Value, out: &mut Vec<Bookmark>, skipped: &mut usize) {
     let Some(roots) = tree.get("roots").and_then(Value::as_object) else {
         return;
     };
     for key in ["bookmark_bar", "other", "synced"] {
         if let Some(root) = roots.get(key) {
-            walk(root, out, 0);
+            walk(root, out, skipped, 0);
         }
     }
 }
 
-fn walk(node: &Value, out: &mut Vec<Bookmark>, depth: usize) {
+fn walk(node: &Value, out: &mut Vec<Bookmark>, skipped: &mut usize, depth: usize) {
     if depth > 64 {
         return;
     }
@@ -162,6 +164,9 @@ fn walk(node: &Value, out: &mut Vec<Bookmark>, depth: usize) {
             let url = node.get("url").and_then(Value::as_str).unwrap_or_default();
             let web =
                 url::Url::parse(url).is_ok_and(|url| matches!(url.scheme(), "http" | "https"));
+            if !web || crate::profile::normalize_url(url).is_none() {
+                *skipped += 1;
+            }
             if web && let Some(url) = crate::profile::normalize_url(url) {
                 let title = node
                     .get("name")
@@ -180,7 +185,7 @@ fn walk(node: &Value, out: &mut Vec<Bookmark>, depth: usize) {
                 .into_iter()
                 .flatten()
             {
-                walk(child, out, depth + 1);
+                walk(child, out, skipped, depth + 1);
             }
         }
     }
@@ -209,7 +214,9 @@ mod tests {
             ]}
         }});
         let mut out = Vec::new();
-        collect(&tree, &mut out);
+        let mut skipped = 0;
+        collect(&tree, &mut out, &mut skipped);
+        assert_eq!(skipped, 3, "script, file, and chrome links are reported, not silently dropped");
         let urls: Vec<_> = out.iter().map(|b| b.url.as_str()).collect();
         assert_eq!(
             urls,

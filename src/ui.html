@@ -204,7 +204,7 @@ let inside=false,hideTimer;
 const syncCollapsed=()=>{ document.body.classList.toggle('floating',!!currentState.sidebar_collapsed); document.body.classList.toggle('collapsed',!!currentState.sidebar_collapsed&&!currentState.sidebar_peek); };
 function showToast(message,undo=false) { clearTimeout(toastTimer); $('toast-message').textContent=message; $('toast-undo').hidden=!undo; $('toast').hidden=false; toastTimer=setTimeout(()=> $('toast').hidden=true,6000); }
 function activeTab() { return currentState.tabs.find(t=>t.id===currentState.active_tab_id); }
-function displayAddress(url) { if(!url || url==='veluno://newtab') return ''; try { const parsed=new URL(url); return parsed.protocol==='https:'?parsed.hostname:url; } catch { return url; } }
+const displayAddress=url=>Veluno.displayAddress(url);
 function renderTabs() {
  const tabs=currentState.tabs.filter(t=>t.workspace_id===currentState.active_workspace_id);
  const query=$('tab-search').value.trim().toLowerCase();

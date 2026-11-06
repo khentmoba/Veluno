@@ -54,6 +54,14 @@ assert.equal(marks('aaa','aa'),'[aa]a','overlapping hits advance past the match'
 assert.equal(marks('Nothing','zzz'),'Nothing','a miss leaves the title whole');
 assert.equal(marks('Anything',''),'Anything','an empty query marks nothing');
 assert.equal(marks('a.b','.'),'a[.]b','punctuation matches literally');
+const display=window.Veluno.displayAddress;
+assert.equal(display('https://example.com/a?b=1'),'example.com','a blurred HTTPS address shows its host');
+assert.equal(display('https://localhost:5173/dev'),'localhost:5173','a non-default port stays visible');
+assert.equal(display('https://example.com:443/'),'example.com','the default port is dropped');
+assert.equal(display('http://example.com/a'),'http://example.com/a','HTTP keeps its scheme');
+assert.equal(display('veluno://newtab'),'');
+assert.equal(display(''),'');
+assert.equal(display('not a url'),'not a url');
 const summary=window.Veluno.downloadSummary;
 assert.equal(summary([]).label,'','an empty list has no summary');
 assert.equal(summary([{id:1,status:'complete',received:1048576}]).label,'1 file · 1.0 MB');
