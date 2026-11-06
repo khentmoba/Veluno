@@ -90,7 +90,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 .site-panel { position:absolute; top:48px; left:0; width:100%; max-height:calc(100vh - 110px); overflow:auto; padding:12px; background:var(--surface); border:1px solid var(--line); border-radius:10px; z-index:25; font-size:12px; }
 .site-heading { display:flex; align-items:center; justify-content:space-between; } .site-panel p { color:var(--muted); line-height:1.5; margin:10px 0; } #site-origin { color:var(--text); overflow-wrap:anywhere; user-select:text; }
 .site-panel>button,.site-actions button { padding:9px 8px; background:var(--active); text-align:left; width:100%; } .site-actions { display:flex; gap:8px; }
-.feedback { flex-shrink:0; display:flex; flex-direction:column; gap:0; border:1px solid var(--line); border-radius:10px; background:var(--surface); overflow:hidden; }
+.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; } .feedback { flex-shrink:0; display:flex; flex-direction:column; gap:0; border:1px solid var(--line); border-radius:10px; background:var(--surface); overflow:hidden; }
 .feedback:has(>.activity[hidden]):has(>.toast[hidden]) { display:none; }
 .feedback .activity,.feedback .toast { border:0; border-radius:0; background:none; box-shadow:none; padding:4px 4px 4px 12px; font-size:12px; min-height:32px; }
 .feedback .activity:not([hidden])+.toast { border-top:1px solid var(--line); }
@@ -161,6 +161,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 <button type="button" id="cancel-rename-workspace" hidden>Cancel rename</button>
 </div></details><details id="browser-menu"><summary class="icon" title="Tab actions" aria-label="Tab actions"><svg><use href="#more"/></svg></summary><div class="menu"><button id="btn-pin-tab">Pin current tab</button><button id="btn-reopen-tab">Reopen closed tab <kbd>Ctrl Shift T</kbd></button><button id="btn-clear-tabs">Close other unpinned tabs</button><div id="recently-closed" hidden></div><hr><button id="btn-check-update">Check for updates</button><button id="btn-default-browser">Set default browser?</button><hr><p>Workspaces: Alt + 1-9<br>Address bar: Ctrl + L<br>Toggle sidebar: Ctrl + Shift + B<br>Bookmark page: Ctrl + D<br>Find in page: Ctrl + F</p></div></details></div>
 </footer>
+<div class="sr-only" id="announcer" role="status" aria-live="polite"></div>
 <div class="menu" id="tab-context-menu" role="menu" aria-label="Tab options" hidden></div>
 <svg style="display:none" xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="audio" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol><symbol id="muted" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Zm5 4 6 6m0-6-6 6"/></symbol>
@@ -204,6 +205,13 @@ let inside=false,hideTimer;
 const syncCollapsed=()=>{ document.body.classList.toggle('floating',!!currentState.sidebar_collapsed); document.body.classList.toggle('collapsed',!!currentState.sidebar_collapsed&&!currentState.sidebar_peek); };
 function showToast(message,undo=false) { clearTimeout(toastTimer); $('toast-message').textContent=message; $('toast-undo').hidden=!undo; $('toast').hidden=false; toastTimer=setTimeout(()=> $('toast').hidden=true,6000); }
 function activeTab() { return currentState.tabs.find(t=>t.id===currentState.active_tab_id); }
+// A live region only speaks when its text changes, so clear it before the next message.
+function announce(message) {
+ const node=$('announcer');
+ if(!node||node.textContent===message) return;
+ node.textContent='';
+ requestAnimationFrame(()=>{ node.textContent=message; });
+}
 const displayAddress=url=>Veluno.displayAddress(url);
 function renderTabs() {
  const tabs=currentState.tabs.filter(t=>t.workspace_id===currentState.active_workspace_id);
@@ -339,6 +347,11 @@ window.updateState = state => {
  $('app-reopen').disabled=!state.can_restore_closed_tab;
  $('zoom-level').textContent=(state.zoom||100)+'%';
  const active=activeTab();
+ if(previous.active_workspace_id!==state.active_workspace_id) announce('Workspace '+(workspace?.name||''));
+ else if(previous.active_tab_id!==state.active_tab_id&&active) {
+  const peers=state.tabs.filter(tab=>tab.workspace_id===state.active_workspace_id);
+  announce('Tab '+(active.title||active.url)+', '+(peers.findIndex(tab=>tab.id===state.active_tab_id)+1)+' of '+peers.length);
+ }
  if(previous.active_tab_id!==state.active_tab_id) closeAddressResults();
  if(document.activeElement!==$('url-input') || previous.active_tab_id!==state.active_tab_id) $('url-input').value=displayAddress(active?.url);
  const scheme=(()=>{ try { return new URL(active?.url).protocol; } catch { return ''; } })();

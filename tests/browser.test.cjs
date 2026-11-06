@@ -194,6 +194,10 @@ assert.ok(uiHtml.includes('autoScrollTabs(e.clientY)'), 'dragging near an edge s
 assert.ok(/function autoScrollTabs/.test(uiHtml), 'the tab list has an auto-scroll helper');
 assert.ok(uiHtml.includes("className='tab-loading'"), 'a loading tab shows an indicator');
 assert.ok(uiHtml.includes("addItem('Copy address'"), 'the tab menu can copy the tab address');
+assert.ok(uiHtml.includes('id="announcer" role="status" aria-live="polite"'), 'changes are announced politely');
+assert.ok(/function announce\(message\)/.test(uiHtml), 'the sidebar has an announcement helper');
+assert.ok(uiHtml.includes("announce('Workspace '"), 'a workspace change is announced');
+assert.ok(/announce\('Tab '\.\+\(active\.title/.test(uiHtml), 'a tab change is announced');
 assert.ok(/if\(!\$\('activity'\)\.hidden\) \{ e\.preventDefault\(\); \$\('activity'\)\.hidden=true; return; \}/.test(uiHtml), 'Escape dismisses the status message');
 assert.ok(uiHtml.includes('@keyframes tab-spin'), 'the loading indicator animates');
 assert.ok(uiHtml.includes('prefers-reduced-motion:reduce) { .tab-loading'), 'the loading indicator respects reduced motion');
