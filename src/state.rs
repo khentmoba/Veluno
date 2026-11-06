@@ -459,9 +459,7 @@ impl BrowserState {
         let ids: Vec<_> = self
             .tabs
             .iter()
-            .filter(|tab| {
-                tab.id != tab_id && tab.workspace_id == workspace && !tab.is_pinned
-            })
+            .filter(|tab| tab.id != tab_id && tab.workspace_id == workspace && !tab.is_pinned)
             .map(|tab| tab.id)
             .collect();
         for id in &ids {
@@ -1231,7 +1229,12 @@ mod tests {
     fn zoom_stays_with_its_tab_through_sleep_and_restore() {
         let mut state = BrowserState::new();
         let page = state.add_tab(Some("https://example.com/zoom".into()), false);
-        state.tabs.iter_mut().find(|tab| tab.id == page).unwrap().zoom = 150;
+        state
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id == page)
+            .unwrap()
+            .zoom = 150;
         state.toggle_sleep(page);
         assert_eq!(
             state.tabs.iter().find(|tab| tab.id == page).unwrap().zoom,
@@ -1241,7 +1244,12 @@ mod tests {
         let saved = serde_json::to_string(&state).unwrap();
         let restored = BrowserState::from_session(&saved).unwrap();
         assert_eq!(
-            restored.tabs.iter().find(|tab| tab.id == page).unwrap().zoom,
+            restored
+                .tabs
+                .iter()
+                .find(|tab| tab.id == page)
+                .unwrap()
+                .zoom,
             150
         );
         let copy = state.duplicate_tab(page).unwrap();
@@ -1254,7 +1262,10 @@ mod tests {
             r#"{"id":9,"workspace_id":1,"title":"t","url":"https://example.com/","is_pinned":false,"is_sleeping":false}"#,
         )
         .unwrap();
-        assert_eq!(older.zoom, 100, "sessions saved before zoom existed still load");
+        assert_eq!(
+            older.zoom, 100,
+            "sessions saved before zoom existed still load"
+        );
     }
 
     #[test]
@@ -1267,14 +1278,28 @@ mod tests {
         state.create_profile("Other").unwrap();
         let other = state.add_tab(Some("https://example.org/".into()), false);
         state.switch_workspace(1);
-        assert_eq!(state.close_tabs_below(second), 1, "only the tab after it closes");
+        assert_eq!(
+            state.close_tabs_below(second),
+            1,
+            "only the tab after it closes"
+        );
         assert!(state.tabs.iter().any(|tab| tab.id == second));
         assert!(!state.tabs.iter().any(|tab| tab.id == third));
-        assert!(state.tabs.iter().any(|tab| tab.id == other), "other workspaces are untouched");
+        assert!(
+            state.tabs.iter().any(|tab| tab.id == other),
+            "other workspaces are untouched"
+        );
         assert_eq!(state.active_tab_id, second);
-        assert_eq!(state.close_other_tabs(second), 1, "the unpinned opener closes");
+        assert_eq!(
+            state.close_other_tabs(second),
+            1,
+            "the unpinned opener closes"
+        );
         assert!(!state.tabs.iter().any(|tab| tab.id == first));
-        assert!(state.tabs.iter().any(|tab| tab.id == pinned), "pins survive");
+        assert!(
+            state.tabs.iter().any(|tab| tab.id == pinned),
+            "pins survive"
+        );
         assert_eq!(state.active_tab_id, second);
         assert_eq!(state.closed_tabs.len(), 2, "both closes are restorable");
     }
@@ -1296,7 +1321,10 @@ mod tests {
         state.next_tab_id = usize::MAX - 1;
         state.close_tab(added);
         let restored = state.restore_closed_tab().unwrap();
-        assert_eq!(state.tabs.iter().filter(|tab| tab.id == restored).count(), 1);
+        assert_eq!(
+            state.tabs.iter().filter(|tab| tab.id == restored).count(),
+            1
+        );
     }
 
     #[test]
@@ -1323,7 +1351,12 @@ mod tests {
             private < usize::MAX - 2,
             "the private profile takes a free id instead of overflowing"
         );
-        assert!(state.workspaces.iter().any(|w| w.private && w.id == private));
+        assert!(
+            state
+                .workspaces
+                .iter()
+                .any(|w| w.private && w.id == private)
+        );
     }
 
     #[test]

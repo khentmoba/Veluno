@@ -32,7 +32,8 @@ impl SessionWriter {
                         let backup = path.with_extension("json.bak");
                         // Keep the generation before the backup so one bad write cannot lose both.
                         if let Ok(older) = std::fs::read(&backup) {
-                            let _ = profile::write_atomic(&path.with_extension("json.bak2"), &older);
+                            let _ =
+                                profile::write_atomic(&path.with_extension("json.bak2"), &older);
                         }
                         profile::write_atomic(&backup, previous)?;
                     }

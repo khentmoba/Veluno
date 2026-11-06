@@ -199,7 +199,13 @@ mod tests {
         let mut entries = Vec::new();
         record(&mut entries, "https://a.test/", "A", 1, None);
         record(&mut entries, "https://b.test/", "B", 2, None);
-        record(&mut entries, "https://a.test/", "A again", 3, Some("https://a.test/i.png"));
+        record(
+            &mut entries,
+            "https://a.test/",
+            "A again",
+            3,
+            Some("https://a.test/i.png"),
+        );
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].url, "https://a.test/");
         assert_eq!(entries[0].title, "A again");
