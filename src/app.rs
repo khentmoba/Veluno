@@ -289,17 +289,36 @@ pub enum UserEvent {
     ContentFullscreen(usize, u64, bool),
 }
 
+/// Fullscreens the window. Windows pins a maximized window's client area to the work area, so the
+/// maximized state has to be cleared first or the page keeps the taskbar-sized gap it had.
+fn fullscreen_window(window: &Window, maximize_after: &mut bool) {
+    *maximize_after = window.is_maximized();
+    if *maximize_after {
+        window.set_maximized(false);
+    }
+    window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+}
+
+/// Returns the window to its normal frame and to the maximized state it had before fullscreen.
+fn restore_window(window: &Window, maximize_after: &mut bool) {
+    window.set_fullscreen(None);
+    if std::mem::take(maximize_after) {
+        window.set_maximized(true);
+    }
+}
+
 /// Leaves HTML fullscreen for the tab that entered it. The window restores only if the app fullscreened it.
 fn leave_content_fullscreen(
     window: &Window,
     views: &HashMap<usize, WebView>,
     content: &mut Option<(usize, bool)>,
+    maximize_after: &mut bool,
 ) {
     let Some((id, owns_window)) = content.take() else {
         return;
     };
     if owns_window {
-        window.set_fullscreen(None);
+        restore_window(window, maximize_after);
     }
     if let Some(view) = views.get(&id) {
         let _ = view.evaluate_script("if (document.fullscreenElement) document.exitFullscreen()");
@@ -1431,6 +1450,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut zooms: HashMap<usize, u32> = HashMap::new();
     // The tab whose page is in HTML fullscreen, and whether the app made the window fullscreen for it.
     let mut content_fullscreen: Option<(usize, bool)> = None;
+    // Whether the window was maximized before the app fullscreened it.
+    let mut maximize_after_fullscreen = false;
     let mut smoke = crate::smoke::Smoke::new();
     if smoke.is_some() {
         let proxy = proxy.clone();
@@ -1844,14 +1865,11 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             },
                             Command::ToggleFullscreen => {
                                 if content_fullscreen.is_some() {
-                                    leave_content_fullscreen(&window, &views, &mut content_fullscreen);
+                                    leave_content_fullscreen(&window, &views, &mut content_fullscreen, &mut maximize_after_fullscreen);
+                                } else if window.fullscreen().is_some() {
+                                    restore_window(&window, &mut maximize_after_fullscreen);
                                 } else {
-                                    let next = if window.fullscreen().is_some() {
-                                        None
-                                    } else {
-                                        Some(Fullscreen::Borderless(None))
-                                    };
-                                    window.set_fullscreen(next);
+                                    fullscreen_window(&window, &mut maximize_after_fullscreen);
                                 }
                             },
                             Command::ExpandPopup { url } => {
@@ -2155,13 +2173,14 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         });
                     },
                     UserEvent::ContentFullscreen(id, generation, enabled) => {
-                        let current = id == state.active_tab_id && state.tabs.iter().any(|tab| tab.id == id && tab.generation == generation);
+                        let visible = id == state.active_tab_id || state.split_partner() == Some(id);
+                        let current = visible && state.tabs.iter().any(|tab| tab.id == id && tab.generation == generation);
                         if enabled && current && content_fullscreen.is_none() {
                             let owns_window = window.fullscreen().is_none();
-                            if owns_window { window.set_fullscreen(Some(Fullscreen::Borderless(None))); }
+                            if owns_window { fullscreen_window(&window, &mut maximize_after_fullscreen); }
                             content_fullscreen = Some((id, owns_window));
                         } else if !enabled && content_fullscreen.is_some_and(|(active, _)| active == id) {
-                            leave_content_fullscreen(&window, &views, &mut content_fullscreen);
+                            leave_content_fullscreen(&window, &views, &mut content_fullscreen, &mut maximize_after_fullscreen);
                         }
                     },
                     UserEvent::ReaderToggled(id, result) => {
@@ -2187,8 +2206,10 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         downloads.retain(|id, count| *count > 0 || awake.contains(id));
         sleep_pending.retain(|(id, _)| views.contains_key(id));
         let active_id = state.active_tab_id;
-        if content_fullscreen.is_some_and(|(id, _)| id != active_id || !views.contains_key(&id)) {
-            leave_content_fullscreen(&window, &views, &mut content_fullscreen);
+        if content_fullscreen.is_some_and(|(id, _)| {
+            !views.contains_key(&id) || (id != active_id && state.split_partner() != Some(id))
+        }) {
+            leave_content_fullscreen(&window, &views, &mut content_fullscreen, &mut maximize_after_fullscreen);
         }
         if visible_id != Some(active_id)
             && let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == active_id)
@@ -2278,7 +2299,11 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         };
         let panes = split_bounds(content_bounds, window.scale_factor());
         let pane = |id: usize| match pair { Some([left, _]) if id == left => panes.0, Some([_, right]) if id == right => panes.1, _ => content_bounds };
-        let wanted: Vec<usize> = pair.map_or_else(|| vec![active_id], |pair| pair.to_vec());
+        // A page in HTML fullscreen is the only pane on screen, even when it is the split partner.
+        let wanted: Vec<usize> = content_fullscreen.map_or_else(
+            || pair.map_or_else(|| vec![active_id], |pair| pair.to_vec()),
+            |(id, _)| vec![id],
+        );
         if wanted != shown || created {
             for id in shown.iter().filter(|id| !wanted.contains(id)) {
                 if let Some(view) = views.get(id) { desktop::show(view, false); hidden_at.entry(*id).or_insert((now, false)); }
