@@ -146,7 +146,9 @@
       else if (key === 'r') action = event.shiftKey ? 'reload_fresh' : 'reload';
       else if (key === 'f5') action = 'reload_fresh';
       else if (key === 'delete' && event.shiftKey) { action = 'open_settings'; payload = { section: 'privacy' }; }
-      else if (key === 'tab') { action = 'cycle_tab'; payload = { backwards: event.shiftKey }; }
+      else if (key === 'tab') { action = 'cycle_tab'; payload = { backwards: !!event.shiftKey }; }
+      else if (key === 'pageup') { action = 'cycle_tab'; payload = { backwards: true }; }
+      else if (key === 'pagedown') { action = 'cycle_tab'; payload = { backwards: false }; }
       else if (key === '=' || key === '+') { action = 'zoom'; payload = { delta: 10 }; }
       else if (key === '-' || key === '_') { action = 'zoom'; payload = { delta: -10 }; }
       else if (key === '0' && !event.shiftKey) { action = 'zoom'; payload = { delta: 0 }; }

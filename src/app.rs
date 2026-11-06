@@ -207,6 +207,8 @@ pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command>
             (Some('R'), _, true) | (_, 0x74, _) => Command::ReloadFresh,
             (Some('D'), _, false) => Command::ToggleBookmark { url: None },
             (_, 0x09, _) => Command::CycleTab { backwards: shift },
+            (_, 0x21, _) => Command::CycleTab { backwards: true },
+            (_, 0x22, _) => Command::CycleTab { backwards: false },
             (_, 0x2E, true) => Command::OpenSettings {
                 section: Some("privacy".into()),
             },
