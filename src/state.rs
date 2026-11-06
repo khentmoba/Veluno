@@ -52,10 +52,17 @@ pub struct Tab {
     pub is_playing_audio: bool,
     #[serde(default)]
     pub is_muted: bool,
+    /// Page zoom percentage, kept with the tab across sleep and restart.
+    #[serde(default = "default_zoom")]
+    pub zoom: u32,
     #[serde(skip)]
     pub opener: Option<usize>,
     #[serde(skip)]
     pub document_url: Option<String>,
+}
+
+fn default_zoom() -> u32 {
+    100
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +159,7 @@ impl BrowserState {
             has_capture: false,
             is_playing_audio: false,
             is_muted: false,
+            zoom: 100,
             opener: None,
             document_url: None,
         };
@@ -191,7 +199,11 @@ impl BrowserState {
 
     pub fn restore() -> Self {
         let path = crate::profile::directory().join("session.json");
-        for candidate in [path.clone(), path.with_extension("json.bak")] {
+        for candidate in [
+            path.clone(),
+            path.with_extension("json.bak"),
+            path.with_extension("json.bak2"),
+        ] {
             if let Ok(json) = std::fs::read_to_string(&candidate)
                 && let Some(mut state) = Self::from_session(&json)
             {
@@ -289,7 +301,7 @@ impl BrowserState {
         state.is_loading = false;
         state.active_downloads = 0;
         state.update_busy = false;
-        state.zoom = 100;
+        state.zoom = state.active_tab().map_or(100, |tab| tab.zoom);
         state.update_status = None;
         state.update_available = None;
         state.homepage = if state.welcome_dismissed {
@@ -301,9 +313,24 @@ impl BrowserState {
         Some(state)
     }
 
+    /// The next free tab id. Never overflows and never reuses a live tab's id.
+    fn allocate_tab_id(&mut self) -> usize {
+        if self.next_tab_id < usize::MAX - 1
+            && !self.tabs.iter().any(|tab| tab.id == self.next_tab_id)
+        {
+            let id = self.next_tab_id;
+            self.next_tab_id += 1;
+            return id;
+        }
+        let id = (1..=usize::MAX - 2)
+            .find(|id| !self.tabs.iter().any(|tab| tab.id == *id))
+            .unwrap_or(self.active_tab_id);
+        self.next_tab_id = id.saturating_add(1);
+        id
+    }
+
     pub fn add_tab(&mut self, url: Option<String>, is_pinned: bool) -> usize {
-        let id = self.next_tab_id;
-        self.next_tab_id += 1;
+        let id = self.allocate_tab_id();
         let target_url = url
             .map(|value| crate::profile::normalize_url(&value).unwrap_or(value))
             .unwrap_or_else(|| self.homepage.clone());
@@ -330,6 +357,7 @@ impl BrowserState {
             has_capture: false,
             is_playing_audio: false,
             is_muted: false,
+            zoom: 100,
             opener: Some(self.active_tab_id),
             document_url: None,
         };
@@ -418,10 +446,61 @@ impl BrowserState {
         true
     }
 
+    /// Closes every unpinned tab in this workspace except `tab_id`; returns how many closed.
+    pub fn close_other_tabs(&mut self, tab_id: usize) -> usize {
+        let Some(workspace) = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id == tab_id)
+            .map(|tab| tab.workspace_id)
+        else {
+            return 0;
+        };
+        let ids: Vec<_> = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.id != tab_id && tab.workspace_id == workspace && !tab.is_pinned)
+            .map(|tab| tab.id)
+            .collect();
+        for id in &ids {
+            self.close_tab(*id);
+        }
+        self.switch_tab(tab_id);
+        ids.len()
+    }
+
+    /// Closes the unpinned tabs after `tab_id` in its own pin group.
+    pub fn close_tabs_below(&mut self, tab_id: usize) -> usize {
+        let Some(index) = self.tabs.iter().position(|tab| tab.id == tab_id) else {
+            return 0;
+        };
+        let workspace = self.tabs[index].workspace_id;
+        let pinned = self.tabs[index].is_pinned;
+        let ids: Vec<_> = self
+            .tabs
+            .iter()
+            .skip(index + 1)
+            .filter(|tab| tab.workspace_id == workspace && tab.is_pinned == pinned)
+            .map(|tab| tab.id)
+            .collect();
+        for id in &ids {
+            self.close_tab(*id);
+        }
+        self.switch_tab(tab_id);
+        ids.len()
+    }
+
+    /// Restores a closed tab by recency: 0 is the tab closed most recently.
+    pub fn restore_closed_at(&mut self, index: usize) -> Option<usize> {
+        let position = self.closed_tabs.len().checked_sub(index + 1)?;
+        let tab = self.closed_tabs.remove(position);
+        self.closed_tabs.push(tab);
+        self.restore_closed_tab()
+    }
+
     pub fn restore_closed_tab(&mut self) -> Option<usize> {
         if let Some(mut tab) = self.closed_tabs.pop() {
-            tab.id = self.next_tab_id;
-            self.next_tab_id += 1;
+            tab.id = self.allocate_tab_id();
             tab.is_sleeping = false;
             tab.is_loading = false;
             tab.can_go_back = false;
@@ -482,6 +561,11 @@ impl BrowserState {
         candidates
     }
 
+    /// The lowest unused workspace id, so ids stay small and can never overflow.
+    fn next_workspace_id(&self) -> Option<usize> {
+        (1..=usize::MAX - 2).find(|id| !self.workspaces.iter().any(|w| w.id == *id))
+    }
+
     pub fn create_profile(&mut self, name: &str) -> Result<usize, String> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 40 || name.chars().any(char::is_control) {
@@ -495,13 +579,7 @@ impl BrowserState {
             return Err("A workspace with that name already exists.".into());
         }
         let id = self
-            .workspaces
-            .iter()
-            .map(|w| w.id)
-            .max()
-            .unwrap_or(0)
-            .checked_add(1)
-            .filter(|id| *id < usize::MAX - 1)
+            .next_workspace_id()
             .ok_or("Could not create another workspace.")?;
         self.workspaces.push(Workspace {
             id,
@@ -587,8 +665,11 @@ impl BrowserState {
             return;
         }
         let tab = self.tabs.remove(from);
-        let to = self.tabs.iter().position(|t| t.id == target).unwrap();
-        self.tabs.insert(to + usize::from(after), tab);
+        // The target stays present, but never trust an index that could have moved.
+        match self.tabs.iter().position(|t| t.id == target) {
+            Some(to) => self.tabs.insert(to + usize::from(after), tab),
+            None => self.tabs.insert(from.min(self.tabs.len()), tab),
+        }
     }
 
     pub fn private_workspace(&self) -> Option<usize> {
@@ -603,18 +684,23 @@ impl BrowserState {
 
     /// Opens a tab in the Private profile, creating that profile on first use.
     pub fn open_private_tab(&mut self) -> usize {
-        let id = self.private_workspace().unwrap_or_else(|| {
-            let id = self.workspaces.iter().map(|w| w.id).max().unwrap_or(0) + 1;
-            self.workspaces.push(Workspace {
-                id,
-                name: "Private".into(),
-                icon: "private".into(),
-                accent: "#dedee3".into(),
-                emoji: None,
-                private: true,
-            });
-            id
-        });
+        let id = match self.private_workspace() {
+            Some(id) => id,
+            None => {
+                let Some(id) = self.next_workspace_id() else {
+                    return self.active_tab_id;
+                };
+                self.workspaces.push(Workspace {
+                    id,
+                    name: "Private".into(),
+                    icon: "private".into(),
+                    accent: "#dedee3".into(),
+                    emoji: None,
+                    private: true,
+                });
+                id
+            }
+        };
         self.active_workspace_id = id;
         self.add_tab(None, false)
     }
@@ -746,8 +832,7 @@ impl BrowserState {
     pub fn duplicate_tab(&mut self, tab_id: usize) -> Option<usize> {
         let index = self.tabs.iter().position(|tab| tab.id == tab_id)?;
         let source = self.tabs[index].clone();
-        let id = self.next_tab_id;
-        self.next_tab_id += 1;
+        let id = self.allocate_tab_id();
         let copy = Tab {
             id,
             workspace_id: source.workspace_id,
@@ -766,6 +851,7 @@ impl BrowserState {
             has_capture: false,
             is_playing_audio: false,
             is_muted: false,
+            zoom: source.zoom,
             opener: Some(tab_id),
             document_url: None,
         };
@@ -1145,6 +1231,171 @@ mod tests {
             .unwrap()
             .workspace_id;
         assert!(state.set_workspace_emoji(private, "\u{1F4DA}").is_err());
+    }
+
+    #[test]
+    fn zoom_stays_with_its_tab_through_sleep_and_restore() {
+        let mut state = BrowserState::new();
+        let page = state.add_tab(Some("https://example.com/zoom".into()), false);
+        state
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id == page)
+            .unwrap()
+            .zoom = 150;
+        state.toggle_sleep(page);
+        assert_eq!(
+            state.tabs.iter().find(|tab| tab.id == page).unwrap().zoom,
+            150,
+            "sleeping keeps the zoom"
+        );
+        let saved = serde_json::to_string(&state).unwrap();
+        let restored = BrowserState::from_session(&saved).unwrap();
+        assert_eq!(
+            restored
+                .tabs
+                .iter()
+                .find(|tab| tab.id == page)
+                .unwrap()
+                .zoom,
+            150
+        );
+        let copy = state.duplicate_tab(page).unwrap();
+        assert_eq!(
+            state.tabs.iter().find(|tab| tab.id == copy).unwrap().zoom,
+            150,
+            "a duplicate opens at the same zoom"
+        );
+        let older: Tab = serde_json::from_str(
+            r#"{"id":9,"workspace_id":1,"title":"t","url":"https://example.com/","is_pinned":false,"is_sleeping":false}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            older.zoom, 100,
+            "sessions saved before zoom existed still load"
+        );
+    }
+
+    #[test]
+    fn closing_other_and_below_tabs_stays_in_the_workspace_and_keeps_pins() {
+        let mut state = BrowserState::new();
+        let first = state.active_tab_id;
+        let pinned = state.add_tab(Some("https://example.com/pinned".into()), true);
+        let second = state.add_tab(Some("https://example.com/2".into()), false);
+        let third = state.add_tab(Some("https://example.com/3".into()), false);
+        state.create_profile("Other").unwrap();
+        let other = state.add_tab(Some("https://example.org/".into()), false);
+        state.switch_workspace(1);
+        assert_eq!(
+            state.close_tabs_below(second),
+            1,
+            "only the tab after it closes"
+        );
+        assert!(state.tabs.iter().any(|tab| tab.id == second));
+        assert!(!state.tabs.iter().any(|tab| tab.id == third));
+        assert!(
+            state.tabs.iter().any(|tab| tab.id == other),
+            "other workspaces are untouched"
+        );
+        assert_eq!(state.active_tab_id, second);
+        assert_eq!(
+            state.close_other_tabs(second),
+            1,
+            "the unpinned opener closes"
+        );
+        assert!(!state.tabs.iter().any(|tab| tab.id == first));
+        assert!(
+            state.tabs.iter().any(|tab| tab.id == pinned),
+            "pins survive"
+        );
+        assert_eq!(state.active_tab_id, second);
+        assert_eq!(state.closed_tabs.len(), 2, "both closes are restorable");
+    }
+
+    #[test]
+    fn a_specific_closed_tab_can_be_reopened() {
+        let mut state = BrowserState::new();
+        let first = state.add_tab(Some("https://example.com/first".into()), false);
+        let second = state.add_tab(Some("https://example.com/second".into()), false);
+        state.close_tab(first);
+        state.close_tab(second);
+        assert_eq!(state.closed_tabs.len(), 2);
+        let reopened = state.restore_closed_at(1).unwrap();
+        assert_eq!(
+            state
+                .tabs
+                .iter()
+                .find(|tab| tab.id == reopened)
+                .unwrap()
+                .url,
+            "https://example.com/first",
+            "index 1 is the older of the two closed tabs"
+        );
+        assert_eq!(state.closed_tabs.len(), 1);
+        assert!(
+            state.restore_closed_at(5).is_none(),
+            "an out-of-range index is ignored"
+        );
+        assert_eq!(
+            state.closed_tabs.len(),
+            1,
+            "a failed restore keeps the list"
+        );
+    }
+
+    #[test]
+    fn tab_ids_never_overflow_or_collide() {
+        let mut state = BrowserState::new();
+        state.next_tab_id = usize::MAX - 1;
+        let added = state.add_tab(Some("https://example.com/a".into()), false);
+        assert_ne!(added, usize::MAX - 1);
+        assert_eq!(
+            state.tabs.iter().filter(|tab| tab.id == added).count(),
+            1,
+            "a saturated counter still hands out a free id"
+        );
+        state.next_tab_id = usize::MAX - 1;
+        let copy = state.duplicate_tab(state.active_tab_id).unwrap();
+        assert_eq!(state.tabs.iter().filter(|tab| tab.id == copy).count(), 1);
+        state.next_tab_id = usize::MAX - 1;
+        state.close_tab(added);
+        let restored = state.restore_closed_tab().unwrap();
+        assert_eq!(
+            state.tabs.iter().filter(|tab| tab.id == restored).count(),
+            1
+        );
+    }
+
+    #[test]
+    fn workspace_ids_reuse_gaps_and_never_overflow() {
+        let mut state = BrowserState::new();
+        let second = state.create_profile("Second").unwrap();
+        let third = state.create_profile("Third").unwrap();
+        assert_eq!((second, third), (2, 3));
+        state.delete_workspace(second, 1).unwrap();
+        assert_eq!(
+            state.create_profile("Reused").unwrap(),
+            2,
+            "a deleted id is handed out again"
+        );
+        state.workspaces[0].id = usize::MAX - 2;
+        let private = state.open_private_tab();
+        let private = state
+            .tabs
+            .iter()
+            .find(|tab| tab.id == private)
+            .unwrap()
+            .workspace_id;
+        assert!(
+            private < usize::MAX - 2,
+            "the private profile takes a free id instead of overflowing"
+        );
+        assert!(
+            state
+                .workspaces
+                .iter()
+                .any(|w| w.private && w.id == private)
+        );
     }
 
     #[test]

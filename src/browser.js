@@ -125,7 +125,48 @@
     if(fallback) options.push(fallback);
     return options.sort((a,b)=>b.score-a.score).map(item=>item.option);
   }
-  window.Veluno = { send, resolveAddress, suggestions, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
+  // The blurred address: an HTTPS page shows its host, and a non-default port stays visible.
+  function displayAddress(url) {
+    if (!url || url === 'veluno://newtab') return '';
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') return url;
+      return parsed.port ? parsed.hostname + ':' + parsed.port : parsed.hostname;
+    } catch {
+      return url;
+    }
+  }
+  // Splits text into matched and unmatched runs so the sidebar can mark a tab-search hit.
+  function highlight(text, query) {
+    const value = String(text ?? '');
+    const needle = String(query ?? '').trim().toLowerCase();
+    if (!needle) return [{ text: value, match: false }];
+    const lower = value.toLowerCase();
+    const parts = [];
+    let index = 0;
+    for (let at = lower.indexOf(needle); at >= 0; at = lower.indexOf(needle, index)) {
+      if (at > index) parts.push({ text: value.slice(index, at), match: false });
+      parts.push({ text: value.slice(at, at + needle.length), match: true });
+      index = at + needle.length;
+    }
+    if (index < value.length) parts.push({ text: value.slice(index), match: false });
+    return parts;
+  }
+  // Completed downloads only: a transfer in progress is not a saved file yet.
+  function downloadSummary(items = []) {
+    const complete = items.filter(item => item.status === 'complete'
+      || (item.status === 'downloading' && item.total > 0 && item.received >= item.total));
+    const total = complete.reduce((sum, item) => sum + Math.max(0, Number(item.received) || 0), 0);
+    return {
+      count: complete.length,
+      total,
+      newest: complete.length ? complete[complete.length - 1].id : null,
+      label: complete.length
+        ? `${complete.length} ${complete.length === 1 ? 'file' : 'files'} · ${(total / (1024 * 1024)).toFixed(1)} MB`
+        : '',
+    };
+  }
+  window.Veluno = { send, resolveAddress, suggestions, highlight, downloadSummary, displayAddress, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
   const postShortcut = post;
   const stringify = JSON.stringify;
   window.addEventListener('keydown', event => {
@@ -141,12 +182,16 @@
       else if (key === 'd' && !event.shiftKey) action = 'toggle_bookmark';
       else if (key === 'w' && !event.shiftKey) action = 'close_active_tab';
       else if (key === 'l' && !event.shiftKey) action = 'focus_address';
+      else if (key === 'f' && event.shiftKey) action = 'focus_tab_search';
+      else if (key === 'f' && !event.shiftKey) action = 'find_in_page';
       else if (key === 'j' && !event.shiftKey) action = 'open_downloads';
       else if (key === 'h' && !event.shiftKey) action = 'open_history';
       else if (key === 'r') action = event.shiftKey ? 'reload_fresh' : 'reload';
       else if (key === 'f5') action = 'reload_fresh';
       else if (key === 'delete' && event.shiftKey) { action = 'open_settings'; payload = { section: 'privacy' }; }
-      else if (key === 'tab') { action = 'cycle_tab'; payload = { backwards: event.shiftKey }; }
+      else if (key === 'tab') { action = 'cycle_tab'; payload = { backwards: !!event.shiftKey }; }
+      else if (key === 'pageup') { action = 'cycle_tab'; payload = { backwards: true }; }
+      else if (key === 'pagedown') { action = 'cycle_tab'; payload = { backwards: false }; }
       else if (key === '=' || key === '+') { action = 'zoom'; payload = { delta: 10 }; }
       else if (key === '-' || key === '_') { action = 'zoom'; payload = { delta: -10 }; }
       else if (key === '0' && !event.shiftKey) { action = 'zoom'; payload = { delta: 0 }; }

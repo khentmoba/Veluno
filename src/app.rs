@@ -51,6 +51,12 @@ pub enum Command {
     },
     SleepInactiveTabs,
     ClearUnpinnedTabs,
+    CloseOtherTabs {
+        id: usize,
+    },
+    CloseTabsBelow {
+        id: usize,
+    },
     ToggleSidebar,
     Peek {
         open: bool,
@@ -72,6 +78,9 @@ pub enum Command {
         id: usize,
     },
     RestoreClosedTab,
+    RestoreClosedTabAt {
+        index: usize,
+    },
     TogglePin {
         id: usize,
     },
@@ -158,10 +167,15 @@ pub enum Command {
         url: String,
     },
     ClearHistory,
+    ClearHistoryRange {
+        range: String,
+    },
     SetSetting {
         key: String,
         value: serde_json::Value,
     },
+    ResetSettings,
+    OpenProfileFolder,
     InstallAdBlocker,
     OpenExtensionsFolder,
     ClearBrowsingData {
@@ -171,6 +185,8 @@ pub enum Command {
     ImportBookmarks {
         browser: String,
     },
+    FindInPage,
+    FocusTabSearch,
     ToggleReader,
     Screenshot,
     Zoom {
@@ -207,6 +223,8 @@ pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command>
             (Some('R'), _, true) | (_, 0x74, _) => Command::ReloadFresh,
             (Some('D'), _, false) => Command::ToggleBookmark { url: None },
             (_, 0x09, _) => Command::CycleTab { backwards: shift },
+            (_, 0x21, _) => Command::CycleTab { backwards: true },
+            (_, 0x22, _) => Command::CycleTab { backwards: false },
             (_, 0x2E, true) => Command::OpenSettings {
                 section: Some("privacy".into()),
             },
@@ -811,6 +829,7 @@ fn content(
         .ok_or_else(|| std::io::Error::other("This tab no longer exists."))?;
     let url = tab.url.clone();
     let failed = tab.error.is_some();
+    let zoom = tab.zoom;
     tab.generation = generation;
     tab.has_capture = false;
     let token = generation.to_string();
@@ -941,6 +960,9 @@ fn content(
         builder = builder.with_browser_extensions_enabled(true);
     }
     let view = builder.build_as_child(window)?;
+    if zoom != 100 {
+        let _ = view.zoom(f64::from(zoom) / 100.);
+    }
     let _ = desktop::attach_ipc(&view, handle_ipc);
     desktop::attach(&view, id, generation, proxy.clone())?;
     if !private && extensions::enabled_at_startup() {
@@ -1447,7 +1469,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut download_only = HashSet::new();
     let mut last_download_host = None;
     let mut check_busy = false;
-    let mut zooms: HashMap<usize, u32> = HashMap::new();
+
     // The tab whose page is in HTML fullscreen, and whether the app made the window fullscreen for it.
     let mut content_fullscreen: Option<(usize, bool)> = None;
     // Whether the window was maximized before the app fullscreened it.
@@ -1848,6 +1870,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 let ids: Vec<_> = state.tabs.iter().filter(|tab| tab.id != active && tab.workspace_id == state.active_workspace_id && !tab.is_pinned && downloads.get(&tab.id).copied().unwrap_or(0) == 0).map(|tab| tab.id).collect();
                                 for id in ids { state.close_tab(id); }
                             },
+                            Command::CloseOtherTabs { id } => { state.close_other_tabs(id); },
+                            Command::CloseTabsBelow { id } => { state.close_tabs_below(id); },
                             Command::ToggleSidebar => { state.toggle_sidebar(); },
                             Command::Peek { open } => { state.sidebar_peek = open && state.sidebar_collapsed; },
                             Command::TopbarPeek { open } => { state.topbar_peek = open; },
@@ -1915,6 +1939,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             },
                             Command::SwitchWorkspace { id } => { state.switch_workspace(id); },
                             Command::RestoreClosedTab => { state.restore_closed_tab(); },
+                            Command::RestoreClosedTabAt { index } => { state.restore_closed_at(index); },
                             Command::NewPrivateTab => { state.open_private_tab(); palette_open = false; },
                             Command::ToggleBookmark { url } => state.toggle_bookmark(url),
                             Command::TogglePin { id } => state.toggle_pin(id),
@@ -1992,6 +2017,12 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::OpenHistory => { state.open_internal("veluno://history"); palette_open = false; },
                             Command::DeleteHistory { url } => history::remove(&url),
                             Command::ClearHistory => history::clear(),
+                            Command::ClearHistoryRange { range } => {
+                                if let Some((length, label)) = clear_range(&range) {
+                                    history::clear_recent(length);
+                                    state.update_status = Some(format!("Cleared browsing history from {label}."));
+                                }
+                            },
                             Command::SetSetting { key, value } => match settings::set(&key, &value) {
                                 Ok(current) => {
                                     if key == "accent" {
@@ -2018,6 +2049,18 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 },
                                 Err(error) => { state.update_status = Some(error); },
                             },
+                            Command::ResetSettings => match settings::reset() {
+                                Ok(current) => {
+                                    let script = ui::accent_script();
+                                    for view in [&sidebar, &palette, &topbar, &popup_bar] { let _ = view.evaluate_script(&script); }
+                                    for tab in state.tabs.iter().filter(|tab| profile::is_internal(&tab.url)) {
+                                        if let Some(view) = views.get(&tab.id) { let _ = view.evaluate_script(&script); }
+                                    }
+                                    let _ = sidebar.evaluate_script(&format!("document.body.classList.toggle('right',{})", current.sidebar_right));
+                                    state.update_status = Some("Settings were reset to their defaults. Restart Veluno to apply the search engine and ad blocker everywhere.".into());
+                                },
+                                Err(error) => { state.update_status = Some(format!("Could not reset settings: {error}")); },
+                            },
                             Command::InstallAdBlocker => { start_ad_blocker_install(&proxy); },
                             Command::ClearBrowsingData { range, kinds } => if let Some((range, label)) = clear_range(&range) {
                                 if kinds.history {
@@ -2040,17 +2083,28 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::ImportBookmarks { browser } => {
                                 let name = crate::import::name(&browser).unwrap_or("that browser");
                                 state.update_status = Some(match crate::import::read(&browser) {
-                                    Ok(found) => {
+                                    Ok((found, skipped)) => {
                                         let total = found.len();
-                                        match state.import_bookmarks(found) {
+                                        let mut message = match state.import_bookmarks(found) {
                                             0 if total == 0 => format!("{name} has no web bookmarks to import."),
                                             0 => format!("All {total} bookmarks from {name} are already in Veluno."),
                                             1 => format!("Imported 1 bookmark from {name}."),
                                             added => format!("Imported {added} bookmarks from {name}."),
+                                        };
+                                        if skipped > 0 {
+                                            message.push_str(&format!(" Skipped {skipped} non-web {}.", if skipped == 1 { "link" } else { "links" }));
                                         }
+                                        message
                                     },
                                     Err(error) => error,
                                 });
+                            },
+                            Command::FocusTabSearch => {
+                                state.sidebar_collapsed = false;
+                                let _ = sidebar.evaluate_script("window.focusTabSearch?.()");
+                            },
+                            Command::FindInPage => if let Some(view) = views.get(&state.active_tab_id) {
+                                let _ = view.evaluate_script(include_str!("find.js"));
                             },
                             Command::ToggleReader => if let Some(tab) = state.active_tab() {
                                 if profile::web_origin(&tab.url).is_none() || tab.error.is_some() {
@@ -2072,13 +2126,27 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 let _ = std::fs::create_dir_all(extensions::directory());
                                 if let Err(error) = std::process::Command::new(updater::system_binary("explorer.exe")).arg(extensions::directory()).spawn() { state.update_status = Some(format!("Could not open the extensions folder: {error}")); }
                             },
-                            Command::Zoom { delta } => if let Some(view) = views.get(&state.active_tab_id) {
-                                let current = i32::try_from(zooms.get(&state.active_tab_id).copied().unwrap_or(100)).unwrap_or(100);
-                                let next = u32::try_from(if delta == 0 { 100 } else { current.saturating_add(delta).clamp(30, 300) }).unwrap_or(100);
-                                if view.zoom(f64::from(next) / 100.).is_ok() { zooms.insert(state.active_tab_id, next); }
+                            Command::Zoom { delta } => {
+                                let id = state.active_tab_id;
+                                if let Some(view) = views.get(&id) {
+                                    let current = i32::try_from(state.active_tab().map_or(100, |tab| tab.zoom)).unwrap_or(100);
+                                    let next = u32::try_from(if delta == 0 { 100 } else { current.saturating_add(delta).clamp(30, 300) }).unwrap_or(100);
+                                    if view.zoom(f64::from(next) / 100.).is_ok()
+                                        && let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == id)
+                                    {
+                                        tab.zoom = next;
+                                    }
+                                }
                             },
                             Command::Print => if let Some(view) = views.get(&state.active_tab_id) { let _ = view.print(); },
                             Command::Exit => if may_exit(&state, &session) { *flow = ControlFlow::Exit; },
+                            Command::OpenProfileFolder => {
+                                let directory = profile::directory();
+                                let _ = std::fs::create_dir_all(&directory);
+                                if let Err(error) = std::process::Command::new(updater::system_binary("explorer.exe")).arg(&directory).spawn() {
+                                    state.update_status = Some(format!("Could not open the profile folder: {error}"));
+                                }
+                            },
                             Command::DefaultBrowser => { if let Err(error) = std::process::Command::new(updater::system_binary("explorer.exe")).arg("ms-settings:defaultapps").spawn() { state.update_status = Some(format!("Could not open Windows default apps: {error}")); } },
                             Command::DismissUpdate { version } => { if version.len() <= 100 { state.dismissed_update_version = Some(version); } },
                             Command::CheckUpdates => if !check_busy {
@@ -2239,9 +2307,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         }
         let pair = state.split_pair().filter(|_| content_fullscreen.is_none());
-        zooms.retain(|id, _| views.contains_key(id));
         hidden_at.retain(|id, _| views.contains_key(id));
-        state.zoom = zooms.get(&active_id).copied().unwrap_or(100);
+        state.zoom = state.active_tab().map_or(100, |tab| tab.zoom);
         let now = std::time::Instant::now();
         let dt = if animating { now.duration_since(last_frame).as_secs_f64().min(0.05) } else { 0. };
         last_frame = now;

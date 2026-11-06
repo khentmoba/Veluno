@@ -7,26 +7,58 @@ pub const MANIFEST_URL: &str =
     "https://raw.githubusercontent.com/khentmoba/Veluno/main/version.json";
 pub const GITHUB_LATEST_API: &str = "https://api.github.com/repos/khentmoba/Veluno/releases/latest";
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Version {
     pub major: u32,
     pub minor: u32,
     pub patch: u32,
+    /// A fourth numeric segment, which Windows installers sometimes add.
+    pub revision: u32,
+    /// A pre-release tag such as `-beta` sorts before the release with the same numbers.
+    pub prerelease: bool,
 }
 
 impl Version {
     pub fn parse(s: &str) -> Option<Self> {
         let clean = s.trim().trim_start_matches(['v', 'V']);
-        let core = clean.split('-').next()?;
+        // Build metadata after '+' never affects ordering.
+        let core = clean.split(['-', '+']).next()?;
+        let prerelease = clean
+            .split_once('-')
+            .is_some_and(|(_, tag)| !tag.is_empty());
         let mut parts = core.split('.');
         let major = parts.next()?.parse().ok()?;
         let minor = parts.next()?.parse().ok()?;
         let patch = parts.next().unwrap_or("0").parse().ok()?;
+        let revision = parts.next().unwrap_or("0").parse().ok()?;
+        if parts.next().is_some() {
+            return None;
+        }
         Some(Self {
             major,
             minor,
             patch,
+            revision,
+            prerelease,
         })
+    }
+}
+
+impl Ord for Version {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.major, self.minor, self.patch, self.revision)
+            .cmp(&(other.major, other.minor, other.patch, other.revision))
+            .then_with(|| match (self.prerelease, other.prerelease) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            })
+    }
+}
+
+impl PartialOrd for Version {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -478,7 +510,9 @@ bbb222  veluno-setup.exe
             Some(Version {
                 major: 0,
                 minor: 1,
-                patch: 0
+                patch: 0,
+                revision: 0,
+                prerelease: false
             })
         );
         assert_eq!(
@@ -486,7 +520,9 @@ bbb222  veluno-setup.exe
             Some(Version {
                 major: 1,
                 minor: 2,
-                patch: 3
+                patch: 3,
+                revision: 0,
+                prerelease: false
             })
         );
         assert_eq!(
@@ -494,7 +530,9 @@ bbb222  veluno-setup.exe
             Some(Version {
                 major: 0,
                 minor: 9,
-                patch: 15
+                patch: 15,
+                revision: 0,
+                prerelease: true
             })
         );
         assert_eq!(Version::parse("invalid"), None);
@@ -508,6 +546,36 @@ bbb222  veluno-setup.exe
         assert!(!is_newer("0.1.0", "0.1.0"));
         assert!(!is_newer("0.1.0", "0.2.0"));
         assert!(!is_newer("v0.1.0", "0.1.0"));
+        assert!(is_newer("0.3.5.1", "0.3.5"), "a fourth segment is compared");
+        assert!(
+            !is_newer("0.3.5.0", "0.3.5"),
+            "a zero revision is the same release"
+        );
+        assert!(
+            is_newer("0.3.5", "0.3.5-beta"),
+            "a release beats its pre-release"
+        );
+        assert!(!is_newer("0.3.5-beta", "0.3.5"));
+        assert!(
+            !is_newer("0.3.5+build.7", "0.3.5"),
+            "build metadata is ignored"
+        );
+        assert!(is_newer("0.3.6-beta", "0.3.5"));
+        assert_eq!(
+            Version::parse("1.2.3.4.5"),
+            None,
+            "five segments are rejected"
+        );
+        assert_eq!(
+            Version::parse("1.2.3-beta"),
+            Some(Version {
+                major: 1,
+                minor: 2,
+                patch: 3,
+                revision: 0,
+                prerelease: true
+            })
+        );
     }
 
     #[test]

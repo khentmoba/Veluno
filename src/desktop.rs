@@ -517,7 +517,7 @@ pub fn screenshot(
     use wry::WebViewExtWindows;
     let folder = pictures_folder().join("Veluno");
     std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
-    let path = folder.join(screenshot_name(title));
+    let path = unique_path(&folder, screenshot_name(title));
     // SAFETY: The `HSTRING` lives until the call returns, and the returned stream is owned here.
     let stream = unsafe {
         SHCreateStreamOnFileEx(
@@ -555,6 +555,22 @@ pub fn screenshot(
         return Err(error.to_string());
     }
     Ok(())
+}
+
+/// A free file name in `folder`, so two captures in the same second both survive.
+fn unique_path(folder: &std::path::Path, name: String) -> std::path::PathBuf {
+    let candidate = folder.join(&name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let stem = name.strip_suffix(".png").unwrap_or(&name);
+    for number in 2..1000 {
+        let next = folder.join(format!("{stem} ({number}).png"));
+        if !next.exists() {
+            return next;
+        }
+    }
+    candidate
 }
 
 fn pictures_folder() -> std::path::PathBuf {
@@ -1742,5 +1758,24 @@ mod tests {
         );
         let long = file_name(&"x".repeat(200), stamp);
         assert!(long.starts_with(&"x".repeat(60)) && !long.starts_with(&"x".repeat(61)));
+    }
+
+    #[test]
+    fn a_second_screenshot_in_the_same_second_gets_its_own_name() {
+        let folder = std::env::temp_dir().join(format!("veluno-shots-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let name = "Example 2026-03-07 09.05.02.png".to_string();
+        assert_eq!(unique_path(&folder, name.clone()), folder.join(&name));
+        std::fs::write(folder.join(&name), b"png").unwrap();
+        assert_eq!(
+            unique_path(&folder, name.clone()),
+            folder.join("Example 2026-03-07 09.05.02 (2).png")
+        );
+        std::fs::write(folder.join("Example 2026-03-07 09.05.02 (2).png"), b"png").unwrap();
+        assert_eq!(
+            unique_path(&folder, name),
+            folder.join("Example 2026-03-07 09.05.02 (3).png")
+        );
+        std::fs::remove_dir_all(folder).unwrap();
     }
 }

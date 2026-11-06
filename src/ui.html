@@ -35,7 +35,7 @@ svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7;
 .tabs { flex:1; min-height:0; overflow:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; margin:0 -4px; padding:0 4px; }
 .tab-group { display:flex; flex-direction:column; gap:4px; } .tab-group:not(:empty)+.tab-group:not(:empty) { border-top:1px solid #262629; margin-top:10px; padding-top:10px; }
 .tab { display:flex; align-items:center; gap:4px; min-height:40px; border-radius:9px; position:relative; } .tab:hover { background:var(--surface); } .tab.active { background:var(--active); box-shadow:inset 0 0 0 1px #ffffff0d; } .tab.split { box-shadow:inset 3px 0 0 var(--accent); } .tab.split.active { box-shadow:inset 3px 0 0 var(--accent),inset 0 0 0 1px #ffffff0d; } .tab.active .tab-main { font-weight:600; }
-.tab-main { min-width:0; display:flex; gap:10px; align-items:center; flex:1; text-align:left; height:40px; padding:0 9px; border-radius:9px; } .tab-main:hover { background:transparent; } .favicon { width:16px; height:16px; flex-shrink:0; display:grid; place-items:center; color:var(--accent); font-size:11px; font-weight:600; } .favicon svg { width:14px; height:14px; } .favicon { position:relative; } .favicon img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; } .tab-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .tab.sleeping:not(.active) .tab-title { color:var(--muted); } .sleep-icon { color:var(--muted); width:13px; height:13px; }
+.tab-main { min-width:0; display:flex; gap:10px; align-items:center; flex:1; text-align:left; height:40px; padding:0 9px; border-radius:9px; } .tab-main:hover { background:transparent; } .favicon { width:16px; height:16px; flex-shrink:0; display:grid; place-items:center; color:var(--accent); font-size:11px; font-weight:600; } .favicon svg { width:14px; height:14px; } .favicon { position:relative; } .favicon img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; } .tab-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .tab-title mark { background:none; color:var(--accent); font-weight:600; } .tab.sleeping:not(.active) .tab-title { color:var(--muted); } .sleep-icon { color:var(--muted); width:13px; height:13px; }
 .close-tab { width:28px; height:28px; display:grid; place-items:center; opacity:0; margin-right:5px; flex-shrink:0; } .close-tab svg { width:14px; } .tab:hover .close-tab,.tab:focus-within .close-tab,.tab.active .close-tab { opacity:1; } .close-tab:hover { background:#45454b; color:var(--text); }
 .empty { text-align:center; color:var(--muted); line-height:1.6; padding:24px 10px; }
 .footer { border-top:1px solid var(--line); padding-top:10px; display:flex; flex-direction:column; gap:10px; } .workspace-switcher { display:flex; align-items:center; gap:6px; } #profiles { flex:1; min-width:0; } #profiles summary { display:flex; align-items:center; gap:8px; min-height:34px; padding:6px 8px; border-radius:8px; } #profile-current { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } #profiles .menu { left:0; right:auto; width:236px; } #spaces { display:flex; flex-direction:column; gap:4px; max-height:180px; overflow:auto; scrollbar-width:thin; } .space { min-height:36px; color:var(--muted); overflow-wrap:anywhere; } #profile-form { display:flex; flex-direction:column; gap:8px; padding:10px; border-top:1px solid var(--line); margin-top:8px; } #profile-name { width:100%; padding:9px; background:var(--bg); border:1px solid var(--line); border-radius:8px; } #profile-form button { background:var(--active); justify-content:center; } #profile-form small { color:var(--muted); line-height:1.5; } #profile-error { color:var(--text); margin:0; } .space[aria-pressed="true"] { background:var(--active); color:var(--accent); } .space svg { width:17px; }
@@ -52,7 +52,7 @@ details { position:relative; } summary { list-style:none; cursor:pointer; } summ
 .update-header span { flex:1; }
 .downloads-panel { position:absolute; bottom:calc(100% + 8px); left:0; right:0; z-index:30; max-height:min(360px,calc(100vh - 180px)); overflow:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:10px; }
 .footer { position:relative; }
-.downloads-heading { display:flex; align-items:center; justify-content:space-between; }
+.downloads-heading { display:flex; align-items:center; justify-content:space-between; } .downloads-summary { color:var(--muted); font-size:11px; margin:8px 0 0; font-variant-numeric:tabular-nums; }
 .download-item { padding:10px 0; border-top:1px solid var(--line); font-size:12px; overflow-wrap:anywhere; }
 .download-item strong { display:block; font-weight:600; }
 .download-item small { display:block; color:var(--muted); margin:5px 0; font-variant-numeric:tabular-nums; }
@@ -84,13 +84,13 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 @media(forced-colors:active) { .tab.active,.space[aria-pressed="true"] { outline:1px solid Highlight; } button:disabled { color:GrayText; opacity:1; } }
 .tab.drop-before::before,.tab.drop-after::after { content:""; position:absolute; left:8px; right:8px; height:2px; background:var(--accent); pointer-events:none; }
 .tab.drop-before::before { top:-3px; } .tab.drop-after::after { bottom:-3px; } .tab.dragging { opacity:.5; }
-.audio-toggle { width:26px; height:28px; flex-shrink:0; display:grid; place-items:center; color:var(--text); } .audio-toggle svg { width:15px; }
-.workspace-actions { border-top:1px solid var(--line); margin-top:4px; padding-top:4px; }
+.tab-loading { width:12px; height:12px; flex-shrink:0; border-radius:50%; border:2px solid var(--line); border-top-color:var(--accent); animation:tab-spin 700ms linear infinite; } @keyframes tab-spin { to { transform:rotate(360deg); } } @media (prefers-reduced-motion:reduce) { .tab-loading { animation:none; border-top-color:var(--accent); } } .audio-toggle { width:26px; height:28px; flex-shrink:0; display:grid; place-items:center; color:var(--text); } .audio-toggle svg { width:15px; }
+.workspace-actions { border-top:1px solid var(--line); margin-top:4px; padding-top:4px; } #recently-closed { display:flex; flex-direction:column; gap:2px; padding:4px 0; } #recently-closed::before { content:"Recently closed"; display:block; padding:2px 10px; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); } .recently-closed { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #delete-workspace-panel { padding:8px; font-size:12px; } #workspace-destination { width:100%; margin-top:8px; padding:8px; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:6px; font:inherit; }
 .site-panel { position:absolute; top:48px; left:0; width:100%; max-height:calc(100vh - 110px); overflow:auto; padding:12px; background:var(--surface); border:1px solid var(--line); border-radius:10px; z-index:25; font-size:12px; }
 .site-heading { display:flex; align-items:center; justify-content:space-between; } .site-panel p { color:var(--muted); line-height:1.5; margin:10px 0; } #site-origin { color:var(--text); overflow-wrap:anywhere; user-select:text; }
 .site-panel>button,.site-actions button { padding:9px 8px; background:var(--active); text-align:left; width:100%; } .site-actions { display:flex; gap:8px; }
-.feedback { flex-shrink:0; display:flex; flex-direction:column; gap:0; border:1px solid var(--line); border-radius:10px; background:var(--surface); overflow:hidden; }
+.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; } .feedback { flex-shrink:0; display:flex; flex-direction:column; gap:0; border:1px solid var(--line); border-radius:10px; background:var(--surface); overflow:hidden; }
 .feedback:has(>.activity[hidden]):has(>.toast[hidden]) { display:none; }
 .feedback .activity,.feedback .toast { border:0; border-radius:0; background:none; box-shadow:none; padding:4px 4px 4px 12px; font-size:12px; min-height:32px; }
 .feedback .activity:not([hidden])+.toast { border-top:1px solid var(--line); }
@@ -128,7 +128,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 </nav>
 <form class="address" id="address-form" aria-label="Address bar">
 <button type="button" id="security" class="icon" aria-label="Site controls" title="Site controls" aria-expanded="false" aria-controls="site-panel"><svg aria-hidden="true"><use href="#search"/></svg></button>
-<input id="url-input" role="combobox" aria-autocomplete="list" aria-controls="address-results" aria-expanded="false" aria-label="Search or enter address" placeholder="Search or enter address" autocomplete="off" spellcheck="false">
+<input id="url-input" role="combobox" aria-autocomplete="list" aria-controls="address-results" aria-expanded="false" aria-label="Search or enter address" placeholder="Search or enter address" title="Ctrl+Enter opens the address in a new tab" autocomplete="off" spellcheck="false">
 <button type="button" class="icon" id="btn-bookmark" title="Bookmark this page (Ctrl+D)" aria-label="Bookmark this page" aria-pressed="false"><svg><use href="#star"/></svg></button>
 <button type="button" class="icon" id="btn-copy-url" title="Copy address" aria-label="Copy address"><svg><use href="#copy"/></svg></button>
 <div id="address-results" class="address-results" role="listbox" aria-label="Address suggestions" hidden></div>
@@ -153,14 +153,15 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="toast-undo" title="Reopen closed tab (Ctrl+Shift+T)" hidden>Undo</button></div>
 </div>
 <footer class="footer">
-<section class="downloads-panel" id="downloads-panel" aria-label="Downloads" hidden><div class="downloads-heading"><strong>Downloads</strong><div style="display:flex;align-items:center;gap:6px"><button class="text-button" id="clear-downloads" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;padding:2px 4px" hidden>Clear</button><button class="icon" id="close-downloads" aria-label="Close downloads"><svg><use href="#close"/></svg></button></div></div><p id="downloads-empty">No downloads this session.</p><div id="download-items"></div></section>
+<section class="downloads-panel" id="downloads-panel" aria-label="Downloads" hidden><div class="downloads-heading"><strong>Downloads</strong><div style="display:flex;align-items:center;gap:6px"><button class="text-button" id="reveal-downloads" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;padding:2px 4px" hidden>Show folder</button><button class="text-button" id="clear-downloads" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;padding:2px 4px" hidden>Clear</button><button class="icon" id="close-downloads" aria-label="Close downloads"><svg><use href="#close"/></svg></button></div></div><p id="downloads-empty">No downloads this session.</p><div class="downloads-summary" id="downloads-summary" hidden></div><div id="download-items"></div></section>
 <button class="download-control" id="btn-downloads" title="Downloads (Ctrl+J)" aria-label="Downloads"><svg><use href="#download"/></svg><span>Downloads</span><small id="download-count"></small></button>
 <button class="sleep-control" id="btn-ram-saver" title="Unload background tabs to free memory (Ctrl+Shift+S)"><svg><use href="#moon"/></svg><span id="sleep-label">Sleep background tabs</span><svg><use href="#forward"/></svg></button>
 <div class="workspace-switcher"><details id="profiles"><summary aria-label="Switch workspace"><svg aria-hidden="true"><use href="#globe"/></svg><span id="profile-current">General</span></summary><div class="menu"><p>Workspaces</p><div id="spaces" aria-label="Workspaces"></div><div id="workspace-emojis" role="group" aria-label="Workspace icon"></div><form id="profile-form"><label for="profile-name">New workspace</label><input id="profile-name" placeholder="e.g. School" maxlength="40" required autocomplete="off"><small>Workspaces organize tabs and pins. Website logins are shared.</small><p id="profile-error" role="alert" hidden></p><button type="submit">Create workspace</button></form><div class="workspace-actions"><button type="button" id="rename-workspace">Rename workspace</button><button type="button" id="delete-workspace">Delete workspace</button></div>
 <div id="delete-workspace-panel" hidden><label for="workspace-destination">Move tabs and pins to</label><select id="workspace-destination"></select><p>Tabs stay open. Shared website data is kept.</p><button type="button" id="confirm-delete-workspace">Move tabs and delete workspace</button><button type="button" id="cancel-delete-workspace">Cancel</button></div>
 <button type="button" id="cancel-rename-workspace" hidden>Cancel rename</button>
-</div></details><details id="browser-menu"><summary class="icon" title="Tab actions" aria-label="Tab actions"><svg><use href="#more"/></svg></summary><div class="menu"><button id="btn-pin-tab">Pin current tab</button><button id="btn-reopen-tab">Reopen closed tab <kbd>Ctrl Shift T</kbd></button><button id="btn-clear-tabs">Close other unpinned tabs</button><hr><button id="btn-check-update">Check for updates</button><button id="btn-default-browser">Set default browser?</button><hr><p>Workspaces: Alt + 1-9<br>Address bar: Ctrl + L<br>Toggle sidebar: Ctrl + Shift + B<br>Bookmark page: Ctrl + D<br>Find in page: Ctrl + F</p></div></details></div>
+</div></details><details id="browser-menu"><summary class="icon" title="Tab actions" aria-label="Tab actions"><svg><use href="#more"/></svg></summary><div class="menu"><button id="btn-pin-tab">Pin current tab</button><button id="btn-reopen-tab">Reopen closed tab <kbd>Ctrl Shift T</kbd></button><button id="btn-clear-tabs">Close other unpinned tabs</button><div id="recently-closed" hidden></div><hr><button id="btn-check-update">Check for updates</button><button id="btn-default-browser">Set default browser?</button><hr><p>Workspaces: Alt + 1-9<br>Address bar: Ctrl + L<br>Toggle sidebar: Ctrl + Shift + B<br>Bookmark page: Ctrl + D<br>Find in page: Ctrl + F</p></div></details></div>
 </footer>
+<div class="sr-only" id="announcer" role="status" aria-live="polite"></div>
 <div class="menu" id="tab-context-menu" role="menu" aria-label="Tab options" hidden></div>
 <svg style="display:none" xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="audio" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol><symbol id="muted" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Zm5 4 6 6m0-6-6 6"/></symbol>
@@ -184,6 +185,14 @@ const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
 let draggedTab=null;
 const clearDropMarkers=()=>document.querySelectorAll('.drop-before,.drop-after').forEach(row=>row.classList.remove('drop-before','drop-after'));
 function clearDrag() { draggedTab=null; clearDropMarkers(); document.querySelectorAll('.dragging').forEach(row=>row.classList.remove('dragging')); }
+// Dragging near an edge scrolls the list so a tab can reach a row that is off screen.
+function autoScrollTabs(clientY) {
+ const list=document.querySelector('.tabs');
+ if(!list) return;
+ const rect=list.getBoundingClientRect(), edge=28, stepSize=14;
+ if(clientY<rect.top+edge) list.scrollTop-=stepSize;
+ else if(clientY>rect.bottom-edge) list.scrollTop+=stepSize;
+}
 function moveTab(tab,down) {
  const peers=currentState.tabs.filter(t=>t.workspace_id===tab.workspace_id&&t.is_pinned===tab.is_pinned);
  const target=peers[peers.findIndex(t=>t.id===tab.id)+(down?1:-1)];
@@ -196,7 +205,14 @@ let inside=false,hideTimer;
 const syncCollapsed=()=>{ document.body.classList.toggle('floating',!!currentState.sidebar_collapsed); document.body.classList.toggle('collapsed',!!currentState.sidebar_collapsed&&!currentState.sidebar_peek); };
 function showToast(message,undo=false) { clearTimeout(toastTimer); $('toast-message').textContent=message; $('toast-undo').hidden=!undo; $('toast').hidden=false; toastTimer=setTimeout(()=> $('toast').hidden=true,6000); }
 function activeTab() { return currentState.tabs.find(t=>t.id===currentState.active_tab_id); }
-function displayAddress(url) { if(!url || url==='veluno://newtab') return ''; try { const parsed=new URL(url); return parsed.protocol==='https:'?parsed.hostname:url; } catch { return url; } }
+// A live region only speaks when its text changes, so clear it before the next message.
+function announce(message) {
+ const node=$('announcer');
+ if(!node||node.textContent===message) return;
+ node.textContent='';
+ requestAnimationFrame(()=>{ node.textContent=message; });
+}
+const displayAddress=url=>Veluno.displayAddress(url);
 function renderTabs() {
  const tabs=currentState.tabs.filter(t=>t.workspace_id===currentState.active_workspace_id);
  const query=$('tab-search').value.trim().toLowerCase();
@@ -228,7 +244,7 @@ function renderTabs() {
   if(query && !(tab.title+' '+tab.url).toLowerCase().includes(query)) continue;
   visible++;
   const row=oldRows.get(tab.id)||document.createElement('div');
-  const rowSignature=JSON.stringify([(currentState.split||[]).includes(tab.id),tab.title,tab.url,tab.is_pinned,tab.is_sleeping,tab.favicon,tab.error,tab.is_playing_audio,tab.is_muted,tab.id===currentState.active_tab_id]);
+  const rowSignature=JSON.stringify([(currentState.split||[]).includes(tab.id),tab.title,tab.url,tab.is_pinned,tab.is_sleeping,tab.favicon,tab.error,tab.is_playing_audio,tab.is_muted,tab.is_loading,tab.id===currentState.active_tab_id]);
   if(row.dataset.signature===rowSignature) { (tab.is_pinned?pinned:normal).push(row); continue; }
   row.dataset.signature=rowSignature;
   row.dataset.tabId=tab.id;
@@ -251,7 +267,11 @@ function renderTabs() {
    }
   } catch {}
   if(tab.url==='veluno://newtab') { favicon.replaceChildren(icon('veluno')); }
-  const label=document.createElement('span'); label.className='tab-title'; label.textContent=tab.title||tab.url;
+  const label=document.createElement('span'); label.className='tab-title';
+  for(const part of Veluno.highlight(tab.title||tab.url,query)) {
+   if(part.match) { const mark=document.createElement('mark'); mark.textContent=part.text; label.append(mark); }
+   else label.append(part.text);
+  }
   select.dataset.tabId=tab.id; select.setAttribute('aria-label',(tab.title||tab.url)+(tab.is_pinned?', pinned':'')+(tab.is_sleeping?', sleeping':'')+(tab.error?', page unavailable':''));
   select.onkeydown=event=>{ if(event.altKey&&event.shiftKey&&['ArrowUp','ArrowDown'].includes(event.key)) { event.preventDefault(); event.stopPropagation(); moveTab(tab,event.key==='ArrowDown'); return; } if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)) { event.preventDefault(); const items=[...document.querySelectorAll('.tab-main')]; const index=items.indexOf(select); items[event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus(); } };
   select.append(favicon,label); select.onclick=()=>Veluno.send('switch_tab',{id:tab.id});
@@ -263,10 +283,13 @@ function renderTabs() {
   }
   row.draggable=true;
   row.ondragstart=e=>{ if(e.target.closest('.close-tab,.audio-toggle')) { e.preventDefault(); return; } draggedTab=tab.id; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',String(tab.id)); row.classList.add('dragging'); };
-  row.ondragover=e=>{ const source=currentState.tabs.find(t=>t.id===draggedTab); if(!source||source.id===tab.id||source.workspace_id!==tab.workspace_id||source.is_pinned!==tab.is_pinned)return; e.preventDefault(); clearDropMarkers(); row.classList.add(e.clientY>row.getBoundingClientRect().top+row.offsetHeight/2?'drop-after':'drop-before'); e.dataTransfer.dropEffect='move'; };
+  row.ondragover=e=>{ const source=currentState.tabs.find(t=>t.id===draggedTab); if(!source||source.id===tab.id||source.workspace_id!==tab.workspace_id||source.is_pinned!==tab.is_pinned)return; e.preventDefault(); autoScrollTabs(e.clientY); clearDropMarkers(); row.classList.add(e.clientY>row.getBoundingClientRect().top+row.offsetHeight/2?'drop-after':'drop-before'); e.dataTransfer.dropEffect='move'; };
   row.ondrop=e=>{ e.preventDefault(); const after=e.clientY>row.getBoundingClientRect().top+row.offsetHeight/2; if(draggedTab!=null)Veluno.send('reorder_tab',{id:draggedTab,target:tab.id,after}); clearDrag(); };
   row.ondragend=clearDrag;
 
+  if(tab.is_loading&&!tab.is_sleeping) {
+   const loading=document.createElement('span'); loading.className='tab-loading'; loading.title='Loading'; loading.setAttribute('aria-label','Loading'); row.append(loading);
+  }
   if(tab.is_sleeping) {
    const sleep=document.createElement('span'); sleep.title='This tab is sleeping to save memory. Select the tab to wake it.'; sleep.style.display='flex';
    const moon=icon('moon'); moon.classList.add('sleep-icon'); sleep.append(moon); row.append(sleep);
@@ -324,6 +347,11 @@ window.updateState = state => {
  $('app-reopen').disabled=!state.can_restore_closed_tab;
  $('zoom-level').textContent=(state.zoom||100)+'%';
  const active=activeTab();
+ if(previous.active_workspace_id!==state.active_workspace_id) announce('Workspace '+(workspace?.name||''));
+ else if(previous.active_tab_id!==state.active_tab_id&&active) {
+  const peers=state.tabs.filter(tab=>tab.workspace_id===state.active_workspace_id);
+  announce('Tab '+(active.title||active.url)+', '+(peers.findIndex(tab=>tab.id===state.active_tab_id)+1)+' of '+peers.length);
+ }
  if(previous.active_tab_id!==state.active_tab_id) closeAddressResults();
  if(document.activeElement!==$('url-input') || previous.active_tab_id!==state.active_tab_id) $('url-input').value=displayAddress(active?.url);
  const scheme=(()=>{ try { return new URL(active?.url).protocol; } catch { return ''; } })();
@@ -356,11 +384,26 @@ window.updateState = state => {
  $('btn-pin-tab').textContent=active?.is_pinned?'Unpin current tab':'Pin current tab';
  $('btn-pin-tab').title='Pinned tabs stay awake during automatic tab sleeping';
  $('btn-reopen-tab').disabled=!state.can_restore_closed_tab;
+ const closed=(state.closed_tabs||[]).slice(-5).reverse();
+ const closedSignature=JSON.stringify(closed.map(tab=>[tab.id,tab.title,tab.url]));
+ if($('recently-closed').dataset.signature!==closedSignature) {
+  $('recently-closed').dataset.signature=closedSignature;
+  $('recently-closed').replaceChildren(...closed.map((tab,index)=>{
+   const button=document.createElement('button'); button.className='recently-closed'; button.textContent=tab.title||tab.url; button.title='Reopen '+(tab.url||tab.title);
+   button.onclick=()=>{ Veluno.send('restore_closed_tab_at',{index}); $('browser-menu').open=false; };
+   return button;
+  }));
+ }
+ $('recently-closed').hidden=!closed.length;
  $('downloads-panel').hidden=!state.downloads_open;
  $('btn-downloads').setAttribute('aria-expanded',String(!!state.downloads_open));
  if(JSON.stringify(previous.download_items)!==JSON.stringify(state.download_items)) {
   const items=state.download_items||[];
   $('downloads-empty').hidden=items.length>0;
+  const summary=Veluno.downloadSummary(items);
+  $('downloads-summary').textContent=summary.label;
+  $('downloads-summary').hidden=!summary.label;
+  $('reveal-downloads').hidden=summary.newest==null;
   $('clear-downloads').hidden=!items.some(i=>i.status!=='downloading');
   $('download-items').replaceChildren(...items.slice().reverse().map(item=>{
    const row=document.createElement('div'); row.className='download-item';
@@ -394,6 +437,7 @@ window.updateState = state => {
   else { $('activity-message').textContent=state.update_status; $('activity-message').setAttribute('aria-expanded','false'); $('activity').hidden=false; }
  }
 };
+window.focusTabSearch=()=>{ $('tab-search').hidden=false; $('btn-search-tabs').setAttribute('aria-expanded','true'); $('tab-search').focus(); $('tab-search').select(); };
 window.focusAddress=()=>{ let tries=0; const focus=()=>{ $('url-input').focus(); $('url-input').select(); if(document.activeElement!==$('url-input')&&++tries<10) setTimeout(focus,50); }; focus(); };
 for(const [id,action] of Object.entries({'btn-back':'back','btn-forward':'forward','btn-reload':'reload','btn-add-tab':'new_tab','btn-toggle-sidebar':'toggle_sidebar','btn-reopen-tab':'restore_closed_tab'})) $(id).onclick=()=>Veluno.send(action);
 $('btn-reload').onclick=()=>Veluno.send(currentState.is_loading?'stop':'reload');
@@ -461,12 +505,13 @@ window.updateAddressHistory=entries=>{
   if(selected) selectAddressOption(addressOptions.findIndex(option=>option.url===selected.url&&option.id===selected.id),false);
  }
 };
-function submitAddress() {
+function submitAddress(newTab=false) {
  if(addressComposing) return;
  const option=addressQuery===$('url-input').value?addressOptions[addressSelected]:null;
  const url=option?.url||Veluno.resolveAddress($('url-input').value);
  if(!url) return;
- if(option?.id!=null) Veluno.send('switch_tab',{id:option.id}); else Veluno.navigate(url);
+ if(option?.id!=null&&!newTab) Veluno.send('switch_tab',{id:option.id});
+ else Veluno.send(newTab?'new_tab':'navigate',{url});
  $('url-input').blur(); closeAddressResults();
 }
 $('address-form').onsubmit=e=>{ e.preventDefault(); submitAddress(); };
@@ -477,6 +522,7 @@ $('url-input').addEventListener('compositionend',()=>{addressComposing=false;if(
 $('url-input').onblur=()=>{ closeAddressResults(); $('url-input').value=displayAddress(activeTab()?.url); };
 $('url-input').onkeydown=e=>{
  if(e.isComposing||addressComposing) return;
+ if(e.key==='Enter'&&(e.ctrlKey||e.altKey)) { e.preventDefault(); submitAddress(true); return; }
  if(e.key==='Escape') { e.preventDefault(); $('url-input').blur(); }
  else if(['ArrowDown','ArrowUp'].includes(e.key)) {
   e.preventDefault(); if($('address-results').hidden)renderAddressResults();
@@ -494,6 +540,7 @@ $('btn-ram-saver').onclick=()=>Veluno.send('sleep_inactive_tabs');
 $('toast-undo').onclick=()=>{ Veluno.send('restore_closed_tab'); $('toast').hidden=true; };
 $('close-downloads').onclick=()=>Veluno.send('close_downloads');
 $('clear-downloads').onclick=()=>Veluno.send('clear_downloads');
+$('reveal-downloads').onclick=()=>{ const newest=Veluno.downloadSummary(currentState.download_items||[]).newest; if(newest!=null) Veluno.send('reveal_download',{id:newest}); };
 $('dismiss-update').onclick=()=>{ const version=currentState.update_available?.version; if(version) { currentState.dismissed_update_version=version; $('update-banner').hidden=true; Veluno.send('dismiss_update',{version}); } };
 $('btn-downloads').onclick=()=>Veluno.send('toggle_downloads');
 $('btn-default-browser').onclick=()=>Veluno.send('default_browser');
@@ -518,9 +565,19 @@ function renderWorkspaceEmojis(workspace) {
  }));
 }
 const tabMenu=$('tab-context-menu');
-const closeTabMenu=()=>{ if(!tabMenu.hidden) { tabMenu.hidden=true; scheduleHide(); } };
+let menuTabId=null;
+// Closing from the keyboard or a menu item returns focus to the tab it belonged to.
+const closeTabMenu=(restoreFocus=true)=>{
+ if(tabMenu.hidden) return;
+ tabMenu.hidden=true;
+ const id=menuTabId;
+ menuTabId=null;
+ if(restoreFocus&&id!=null) document.querySelector(`.tab-main[data-tab-id="${id}"]`)?.focus({preventScroll:true});
+ scheduleHide();
+};
 function openTabContextMenu(tab,clientY) {
  for(const m of menus) m.open=false;
+ menuTabId=tab.id;
  tabMenu.replaceChildren();
  const addItem=(label,onSelect,disabled=false)=>{
   const btn=document.createElement('button'); btn.type='button'; btn.role='menuitem'; btn.textContent=label; btn.disabled=disabled;
@@ -532,6 +589,7 @@ function openTabContextMenu(tab,clientY) {
  addItem('Move tab up',()=>moveTab(tab,false));
  addItem('Move tab down',()=>moveTab(tab,true));
  addItem('Duplicate tab',()=>Veluno.send('duplicate_tab',{id:tab.id}));
+ addItem('Copy address',()=>{ navigator.clipboard.writeText(tab.url).then(()=>showToast('Address copied'),()=>showToast('Could not copy the address')); });
  const privateTab=(currentState.workspaces||[]).some(w=>w.private&&w.id===tab.workspace_id);
  if(!privateTab&&/^https?:/.test(tab.url)) addItem('Open in side panel',()=>Veluno.send('open_in_side_panel',{id:tab.id}));
  if((currentState.split||[]).includes(tab.id)) addItem('Close split view',()=>Veluno.send('unsplit'));
@@ -544,6 +602,10 @@ function openTabContextMenu(tab,clientY) {
   for(const space of others) addItem(`Move to ${space.name}`,()=>Veluno.send('move_tab_to_workspace',{id:tab.id,workspace_id:space.id}));
  }
  tabMenu.append(document.createElement('hr'));
+ const closable=currentState.tabs.filter(other=>other.id!==tab.id&&other.workspace_id===tab.workspace_id&&!other.is_pinned).length;
+ addItem('Close other tabs',()=>Veluno.send('close_other_tabs',{id:tab.id}),closable===0);
+ const below=currentState.tabs.slice(currentState.tabs.findIndex(other=>other.id===tab.id)+1).filter(other=>other.workspace_id===tab.workspace_id&&other.is_pinned===tab.is_pinned).length;
+ addItem('Close tabs below',()=>Veluno.send('close_tabs_below',{id:tab.id}),below===0);
  addItem('Close tab',()=>Veluno.send('close_tab',{id:tab.id}));
  tabMenu.hidden=false;
  const maxTop=Math.max(8,window.innerHeight-tabMenu.offsetHeight-8);
@@ -613,8 +675,8 @@ for(const menu of menus) {
  menu.addEventListener('keydown',e=>{ if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key)||!menu.open||e.target.matches('input,select'))return; e.preventDefault(); const items=[...menu.querySelectorAll('button:not(:disabled)')]; const index=items.indexOf(document.activeElement); items[e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus(); });
 }
 tabMenu.addEventListener('keydown',e=>{ if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key)||tabMenu.hidden)return; e.preventDefault(); const items=[...tabMenu.querySelectorAll('button:not(:disabled)')]; const index=items.indexOf(document.activeElement); items[e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus(); });
-document.addEventListener('click',e=>{ for(const menu of menus) if(!menu.contains(e.target)) menu.open=false; if(!tabMenu.hidden&&!tabMenu.contains(e.target)) closeTabMenu(); });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') { if(!$('downloads-panel').hidden) { e.preventDefault(); Veluno.send('close_downloads'); return; } closeTabMenu(); for(const menu of menus) if(menu.open) { menu.open=false; menu.querySelector('summary').focus(); } } });
+document.addEventListener('click',e=>{ for(const menu of menus) if(!menu.contains(e.target)) menu.open=false; if(!tabMenu.hidden&&!tabMenu.contains(e.target)) closeTabMenu(false); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') { if(!$('downloads-panel').hidden) { e.preventDefault(); Veluno.send('close_downloads'); return; } if(!$('activity').hidden) { e.preventDefault(); $('activity').hidden=true; return; } closeTabMenu(); for(const menu of menus) if(menu.open) { menu.open=false; menu.querySelector('summary').focus(); } } });
 const sideResizeDir=e=>e.clientX<5?(e.clientY<8?'nw':e.clientY>window.innerHeight-8?'sw':'w'):e.clientY<5?'n':e.clientY>window.innerHeight-5?'s':'';
 document.addEventListener('mousemove',e=>{ const dir=sideResizeDir(e); document.body.style.cursor=dir==='nw'?'nwse-resize':dir==='sw'?'nesw-resize':dir==='w'?'ew-resize':dir==='n'||dir==='s'?'ns-resize':''; });
 document.addEventListener('mousedown',e=>{ if(e.button!==0||e.target.closest('button,input,summary,a')) return; const dir=sideResizeDir(e); if(dir) { e.preventDefault(); Veluno.send('resize_window',{direction:dir}); } });

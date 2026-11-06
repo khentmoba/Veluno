@@ -12,7 +12,7 @@ svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.6;
 [hidden] { display:none!important; }
 main { max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:18px; }
 header { display:flex; align-items:center; justify-content:space-between; gap:16px; } h1 { font-size:26px; font-weight:600; letter-spacing:-.02em; margin:0; }
-.btn { height:34px; padding:0 14px; background:var(--active); border:1px solid var(--line); font-size:13px; white-space:nowrap; } .btn:hover { background:var(--hover); border-color:var(--muted); } .btn:disabled { opacity:.5; cursor:default; }
+.actions { display:flex; align-items:center; gap:8px; } #clear-range { height:34px; padding:0 8px; background:var(--surface); color:var(--text); border:1px solid var(--line); border-radius:8px; font:inherit; font-size:13px; } .btn { height:34px; padding:0 14px; background:var(--active); border:1px solid var(--line); font-size:13px; white-space:nowrap; } .btn:hover { background:var(--hover); border-color:var(--muted); } .btn:disabled { opacity:.5; cursor:default; }
 .find { display:flex; align-items:center; gap:10px; height:42px; padding:0 14px; background:var(--surface); border:1px solid var(--line); border-radius:21px; color:var(--muted); } .find:focus-within { border-color:var(--accent); } .find input { flex:1; min-width:0; background:none; border:0; outline:0; caret-color:var(--accent); } .find input::placeholder { color:var(--muted); opacity:1; } .find svg { width:18px; height:18px; }
 h2 { font-size:12px; font-weight:600; color:var(--muted); margin:10px 0 8px; text-transform:uppercase; letter-spacing:.06em; }
 ul { list-style:none; margin:0; padding:0; background:var(--surface); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
@@ -30,7 +30,7 @@ li { display:flex; align-items:center; border-bottom:1px solid var(--line); } li
 </head>
 <body>
 <main>
-<header><h1>History</h1><button class="btn" id="clear">Clear history</button></header>
+<header><h1>History</h1><div class="actions"><select id="clear-range" aria-label="How much history to clear"><option value="hour">Last hour</option><option value="day">Last 24 hours</option><option value="week">Last 7 days</option><option value="month">Last 4 weeks</option><option value="all" selected>All time</option></select><button class="btn" id="clear">Clear history</button></div></header>
 <label class="find"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><input id="find" type="search" placeholder="Search bookmarks and history" aria-label="Search bookmarks and history" autocomplete="off" spellcheck="false" autofocus></label>
 <section id="bookmarks" aria-label="Bookmarks" hidden><h2>Bookmarks</h2><ul id="bookmark-list"></ul></section>
 <div id="list"></div>
@@ -108,7 +108,16 @@ function render() {
 }
 $('find').oninput=render;
 $('find').onkeydown=e=>{ if(e.key==='Escape') { $('find').value=''; render(); } };
-$('clear').onclick=()=>{ if(!confirm('Clear all browsing history?')) return; Veluno.send('clear_history'); entries=[]; render(); };
+const ranges={hour:3600e3,day:864e5,week:6048e5,month:24192e5};
+$('clear').onclick=()=>{
+ const range=$('clear-range').value;
+ const label=$('clear-range').selectedOptions[0].textContent.toLowerCase();
+ if(!confirm(range==='all'?'Clear all browsing history?':`Clear history from ${label}?`)) return;
+ Veluno.send(range==='all'?'clear_history':'clear_history_range',range==='all'?{}:{range});
+ const cutoff=Date.now()-ranges[range];
+ entries=range==='all'?[]:entries.filter(entry=>entry.time<cutoff);
+ render();
+};
 document.addEventListener('keydown',e=>{ if(e.ctrlKey&&!e.shiftKey&&!e.altKey&&e.key.toLowerCase()==='f') { e.preventDefault(); $('find').focus(); } });
 render();
 </script>
