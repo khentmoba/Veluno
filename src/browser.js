@@ -125,7 +125,23 @@
     if(fallback) options.push(fallback);
     return options.sort((a,b)=>b.score-a.score).map(item=>item.option);
   }
-  window.Veluno = { send, resolveAddress, suggestions, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
+  // Splits text into matched and unmatched runs so the sidebar can mark a tab-search hit.
+  function highlight(text, query) {
+    const value = String(text ?? '');
+    const needle = String(query ?? '').trim().toLowerCase();
+    if (!needle) return [{ text: value, match: false }];
+    const lower = value.toLowerCase();
+    const parts = [];
+    let index = 0;
+    for (let at = lower.indexOf(needle); at >= 0; at = lower.indexOf(needle, index)) {
+      if (at > index) parts.push({ text: value.slice(index, at), match: false });
+      parts.push({ text: value.slice(at, at + needle.length), match: true });
+      index = at + needle.length;
+    }
+    if (index < value.length) parts.push({ text: value.slice(index), match: false });
+    return parts;
+  }
+  window.Veluno = { send, resolveAddress, suggestions, highlight, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
   const postShortcut = post;
   const stringify = JSON.stringify;
   window.addEventListener('keydown', event => {
