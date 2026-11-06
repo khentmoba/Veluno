@@ -128,7 +128,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 </nav>
 <form class="address" id="address-form" aria-label="Address bar">
 <button type="button" id="security" class="icon" aria-label="Site controls" title="Site controls" aria-expanded="false" aria-controls="site-panel"><svg aria-hidden="true"><use href="#search"/></svg></button>
-<input id="url-input" role="combobox" aria-autocomplete="list" aria-controls="address-results" aria-expanded="false" aria-label="Search or enter address" placeholder="Search or enter address" autocomplete="off" spellcheck="false">
+<input id="url-input" role="combobox" aria-autocomplete="list" aria-controls="address-results" aria-expanded="false" aria-label="Search or enter address" placeholder="Search or enter address" title="Ctrl+Enter opens the address in a new tab" autocomplete="off" spellcheck="false">
 <button type="button" class="icon" id="btn-bookmark" title="Bookmark this page (Ctrl+D)" aria-label="Bookmark this page" aria-pressed="false"><svg><use href="#star"/></svg></button>
 <button type="button" class="icon" id="btn-copy-url" title="Copy address" aria-label="Copy address"><svg><use href="#copy"/></svg></button>
 <div id="address-results" class="address-results" role="listbox" aria-label="Address suggestions" hidden></div>
@@ -461,12 +461,13 @@ window.updateAddressHistory=entries=>{
   if(selected) selectAddressOption(addressOptions.findIndex(option=>option.url===selected.url&&option.id===selected.id),false);
  }
 };
-function submitAddress() {
+function submitAddress(newTab=false) {
  if(addressComposing) return;
  const option=addressQuery===$('url-input').value?addressOptions[addressSelected]:null;
  const url=option?.url||Veluno.resolveAddress($('url-input').value);
  if(!url) return;
- if(option?.id!=null) Veluno.send('switch_tab',{id:option.id}); else Veluno.navigate(url);
+ if(option?.id!=null&&!newTab) Veluno.send('switch_tab',{id:option.id});
+ else Veluno.send(newTab?'new_tab':'navigate',{url});
  $('url-input').blur(); closeAddressResults();
 }
 $('address-form').onsubmit=e=>{ e.preventDefault(); submitAddress(); };
@@ -477,6 +478,7 @@ $('url-input').addEventListener('compositionend',()=>{addressComposing=false;if(
 $('url-input').onblur=()=>{ closeAddressResults(); $('url-input').value=displayAddress(activeTab()?.url); };
 $('url-input').onkeydown=e=>{
  if(e.isComposing||addressComposing) return;
+ if(e.key==='Enter'&&(e.ctrlKey||e.altKey)) { e.preventDefault(); submitAddress(true); return; }
  if(e.key==='Escape') { e.preventDefault(); $('url-input').blur(); }
  else if(['ArrowDown','ArrowUp'].includes(e.key)) {
   e.preventDefault(); if($('address-results').hidden)renderAddressResults();
