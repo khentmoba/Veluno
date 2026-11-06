@@ -73,27 +73,24 @@ fn changed() {
 /// Newest first; reloading the page at the top of the list only refreshes it.
 fn record(entries: &mut Vec<Entry>, url: &str, title: &str, time: u64, favicon: Option<&str>) {
     let title = if title.is_empty() { url } else { title };
-    match entries.first_mut() {
-        Some(latest) if latest.url == url => {
-            latest.title = title.into();
-            latest.time = time;
-            if let Some(favicon) = favicon {
-                latest.favicon = Some(favicon.into());
-            }
-        }
-        _ => {
-            entries.insert(
-                0,
-                Entry {
-                    url: url.into(),
-                    title: title.into(),
-                    time,
-                    favicon: favicon.map(str::to_owned),
-                },
-            );
-            entries.truncate(MAX_ENTRIES);
-        }
-    }
+    // An older visit to the same page moves to the top instead of leaving a duplicate row.
+    let previous = entries
+        .iter()
+        .position(|entry| entry.url == url)
+        .map(|index| entries.remove(index));
+    let favicon = favicon
+        .map(str::to_owned)
+        .or_else(|| previous.as_ref().and_then(|entry| entry.favicon.clone()));
+    entries.insert(
+        0,
+        Entry {
+            url: url.into(),
+            title: title.into(),
+            time,
+            favicon,
+        },
+    );
+    entries.truncate(MAX_ENTRIES);
 }
 
 pub fn visit(url: &str, title: &str, favicon: Option<&str>) {
@@ -111,13 +108,13 @@ pub fn visit(url: &str, title: &str, favicon: Option<&str>) {
     changed();
 }
 
-/// The page title usually arrives after the visit is recorded.
+/// The page title usually arrives after the visit is recorded, so match the row by URL.
 pub fn retitle(url: &str, title: &str) {
     let mut entries = log();
-    if let Some(latest) = entries.first_mut().filter(|latest| latest.url == url)
-        && latest.title != title
+    if let Some(entry) = entries.iter_mut().find(|entry| entry.url == url)
+        && entry.title != title
     {
-        latest.title = title.into();
+        entry.title = title.into();
         changed();
     }
 }
@@ -189,6 +186,37 @@ mod tests {
         assert_eq!(entries[0].title, "B");
         assert_eq!(entries[0].time, 3);
         assert_eq!(entries[1].url, "https://a.test/");
+    }
+
+    #[test]
+    fn revisiting_an_older_page_moves_it_up_without_duplicating() {
+        let mut entries = Vec::new();
+        record(&mut entries, "https://a.test/", "A", 1, None);
+        record(&mut entries, "https://b.test/", "B", 2, None);
+        record(&mut entries, "https://a.test/", "A again", 3, Some("https://a.test/i.png"));
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].url, "https://a.test/");
+        assert_eq!(entries[0].title, "A again");
+        assert_eq!(entries[0].time, 3);
+        assert_eq!(entries[0].favicon.as_deref(), Some("https://a.test/i.png"));
+        assert_eq!(entries[1].url, "https://b.test/");
+        record(&mut entries, "https://a.test/", "A", 4, None);
+        assert_eq!(entries.len(), 2, "a repeat visit still leaves one row");
+        assert_eq!(
+            entries[0].favicon.as_deref(),
+            Some("https://a.test/i.png"),
+            "the known icon survives a visit that reports none"
+        );
+    }
+
+    #[test]
+    fn a_late_title_reaches_the_row_even_after_another_visit() {
+        let mut entries = Vec::new();
+        record(&mut entries, "https://a.test/", "", 1, None);
+        record(&mut entries, "https://b.test/", "B", 2, None);
+        assert_eq!(entries[0].url, "https://b.test/");
+        let late = entries.iter_mut().find(|entry| entry.url == "https://a.test/");
+        assert!(late.is_some(), "the earlier visit is still recorded");
     }
 
     #[test]
