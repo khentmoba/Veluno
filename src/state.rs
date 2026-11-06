@@ -52,10 +52,17 @@ pub struct Tab {
     pub is_playing_audio: bool,
     #[serde(default)]
     pub is_muted: bool,
+    /// Page zoom percentage, kept with the tab across sleep and restart.
+    #[serde(default = "default_zoom")]
+    pub zoom: u32,
     #[serde(skip)]
     pub opener: Option<usize>,
     #[serde(skip)]
     pub document_url: Option<String>,
+}
+
+fn default_zoom() -> u32 {
+    100
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +159,7 @@ impl BrowserState {
             has_capture: false,
             is_playing_audio: false,
             is_muted: false,
+            zoom: 100,
             opener: None,
             document_url: None,
         };
@@ -293,7 +301,7 @@ impl BrowserState {
         state.is_loading = false;
         state.active_downloads = 0;
         state.update_busy = false;
-        state.zoom = 100;
+        state.zoom = state.active_tab().map_or(100, |tab| tab.zoom);
         state.update_status = None;
         state.update_available = None;
         state.homepage = if state.welcome_dismissed {
@@ -349,6 +357,7 @@ impl BrowserState {
             has_capture: false,
             is_playing_audio: false,
             is_muted: false,
+            zoom: 100,
             opener: Some(self.active_tab_id),
             document_url: None,
         };
@@ -790,6 +799,7 @@ impl BrowserState {
             has_capture: false,
             is_playing_audio: false,
             is_muted: false,
+            zoom: source.zoom,
             opener: Some(tab_id),
             document_url: None,
         };
@@ -1169,6 +1179,36 @@ mod tests {
             .unwrap()
             .workspace_id;
         assert!(state.set_workspace_emoji(private, "\u{1F4DA}").is_err());
+    }
+
+    #[test]
+    fn zoom_stays_with_its_tab_through_sleep_and_restore() {
+        let mut state = BrowserState::new();
+        let page = state.add_tab(Some("https://example.com/zoom".into()), false);
+        state.tabs.iter_mut().find(|tab| tab.id == page).unwrap().zoom = 150;
+        state.toggle_sleep(page);
+        assert_eq!(
+            state.tabs.iter().find(|tab| tab.id == page).unwrap().zoom,
+            150,
+            "sleeping keeps the zoom"
+        );
+        let saved = serde_json::to_string(&state).unwrap();
+        let restored = BrowserState::from_session(&saved).unwrap();
+        assert_eq!(
+            restored.tabs.iter().find(|tab| tab.id == page).unwrap().zoom,
+            150
+        );
+        let copy = state.duplicate_tab(page).unwrap();
+        assert_eq!(
+            state.tabs.iter().find(|tab| tab.id == copy).unwrap().zoom,
+            150,
+            "a duplicate opens at the same zoom"
+        );
+        let older: Tab = serde_json::from_str(
+            r#"{"id":9,"workspace_id":1,"title":"t","url":"https://example.com/","is_pinned":false,"is_sleeping":false}"#,
+        )
+        .unwrap();
+        assert_eq!(older.zoom, 100, "sessions saved before zoom existed still load");
     }
 
     #[test]

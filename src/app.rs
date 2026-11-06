@@ -811,6 +811,7 @@ fn content(
         .ok_or_else(|| std::io::Error::other("This tab no longer exists."))?;
     let url = tab.url.clone();
     let failed = tab.error.is_some();
+    let zoom = tab.zoom;
     tab.generation = generation;
     tab.has_capture = false;
     let token = generation.to_string();
@@ -941,6 +942,9 @@ fn content(
         builder = builder.with_browser_extensions_enabled(true);
     }
     let view = builder.build_as_child(window)?;
+    if zoom != 100 {
+        let _ = view.zoom(f64::from(zoom) / 100.);
+    }
     let _ = desktop::attach_ipc(&view, handle_ipc);
     desktop::attach(&view, id, generation, proxy.clone())?;
     if !private && extensions::enabled_at_startup() {
@@ -1447,7 +1451,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut download_only = HashSet::new();
     let mut last_download_host = None;
     let mut check_busy = false;
-    let mut zooms: HashMap<usize, u32> = HashMap::new();
+
     // The tab whose page is in HTML fullscreen, and whether the app made the window fullscreen for it.
     let mut content_fullscreen: Option<(usize, bool)> = None;
     // Whether the window was maximized before the app fullscreened it.
@@ -2072,10 +2076,17 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 let _ = std::fs::create_dir_all(extensions::directory());
                                 if let Err(error) = std::process::Command::new(updater::system_binary("explorer.exe")).arg(extensions::directory()).spawn() { state.update_status = Some(format!("Could not open the extensions folder: {error}")); }
                             },
-                            Command::Zoom { delta } => if let Some(view) = views.get(&state.active_tab_id) {
-                                let current = i32::try_from(zooms.get(&state.active_tab_id).copied().unwrap_or(100)).unwrap_or(100);
-                                let next = u32::try_from(if delta == 0 { 100 } else { current.saturating_add(delta).clamp(30, 300) }).unwrap_or(100);
-                                if view.zoom(f64::from(next) / 100.).is_ok() { zooms.insert(state.active_tab_id, next); }
+                            Command::Zoom { delta } => {
+                                let id = state.active_tab_id;
+                                if let Some(view) = views.get(&id) {
+                                    let current = i32::try_from(state.active_tab().map_or(100, |tab| tab.zoom)).unwrap_or(100);
+                                    let next = u32::try_from(if delta == 0 { 100 } else { current.saturating_add(delta).clamp(30, 300) }).unwrap_or(100);
+                                    if view.zoom(f64::from(next) / 100.).is_ok()
+                                        && let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == id)
+                                    {
+                                        tab.zoom = next;
+                                    }
+                                }
                             },
                             Command::Print => if let Some(view) = views.get(&state.active_tab_id) { let _ = view.print(); },
                             Command::Exit => if may_exit(&state, &session) { *flow = ControlFlow::Exit; },
@@ -2239,9 +2250,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         }
         let pair = state.split_pair().filter(|_| content_fullscreen.is_none());
-        zooms.retain(|id, _| views.contains_key(id));
         hidden_at.retain(|id, _| views.contains_key(id));
-        state.zoom = zooms.get(&active_id).copied().unwrap_or(100);
+        state.zoom = state.active_tab().map_or(100, |tab| tab.zoom);
         let now = std::time::Instant::now();
         let dt = if animating { now.duration_since(last_frame).as_secs_f64().min(0.05) } else { 0. };
         last_frame = now;
