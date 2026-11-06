@@ -486,6 +486,11 @@ impl BrowserState {
         candidates
     }
 
+    /// The lowest unused workspace id, so ids stay small and can never overflow.
+    fn next_workspace_id(&self) -> Option<usize> {
+        (1..=usize::MAX - 2).find(|id| !self.workspaces.iter().any(|w| w.id == *id))
+    }
+
     pub fn create_profile(&mut self, name: &str) -> Result<usize, String> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 40 || name.chars().any(char::is_control) {
@@ -499,13 +504,7 @@ impl BrowserState {
             return Err("A workspace with that name already exists.".into());
         }
         let id = self
-            .workspaces
-            .iter()
-            .map(|w| w.id)
-            .max()
-            .unwrap_or(0)
-            .checked_add(1)
-            .filter(|id| *id < usize::MAX - 1)
+            .next_workspace_id()
             .ok_or("Could not create another workspace.")?;
         self.workspaces.push(Workspace {
             id,
@@ -591,8 +590,11 @@ impl BrowserState {
             return;
         }
         let tab = self.tabs.remove(from);
-        let to = self.tabs.iter().position(|t| t.id == target).unwrap();
-        self.tabs.insert(to + usize::from(after), tab);
+        // The target stays present, but never trust an index that could have moved.
+        match self.tabs.iter().position(|t| t.id == target) {
+            Some(to) => self.tabs.insert(to + usize::from(after), tab),
+            None => self.tabs.insert(from.min(self.tabs.len()), tab),
+        }
     }
 
     pub fn private_workspace(&self) -> Option<usize> {
@@ -607,18 +609,23 @@ impl BrowserState {
 
     /// Opens a tab in the Private profile, creating that profile on first use.
     pub fn open_private_tab(&mut self) -> usize {
-        let id = self.private_workspace().unwrap_or_else(|| {
-            let id = self.workspaces.iter().map(|w| w.id).max().unwrap_or(0) + 1;
-            self.workspaces.push(Workspace {
-                id,
-                name: "Private".into(),
-                icon: "private".into(),
-                accent: "#dedee3".into(),
-                emoji: None,
-                private: true,
-            });
-            id
-        });
+        let id = match self.private_workspace() {
+            Some(id) => id,
+            None => {
+                let Some(id) = self.next_workspace_id() else {
+                    return self.active_tab_id;
+                };
+                self.workspaces.push(Workspace {
+                    id,
+                    name: "Private".into(),
+                    icon: "private".into(),
+                    accent: "#dedee3".into(),
+                    emoji: None,
+                    private: true,
+                });
+                id
+            }
+        };
         self.active_workspace_id = id;
         self.add_tab(None, false)
     }
@@ -1149,6 +1156,33 @@ mod tests {
             .unwrap()
             .workspace_id;
         assert!(state.set_workspace_emoji(private, "\u{1F4DA}").is_err());
+    }
+
+    #[test]
+    fn workspace_ids_reuse_gaps_and_never_overflow() {
+        let mut state = BrowserState::new();
+        let second = state.create_profile("Second").unwrap();
+        let third = state.create_profile("Third").unwrap();
+        assert_eq!((second, third), (2, 3));
+        state.delete_workspace(second, 1).unwrap();
+        assert_eq!(
+            state.create_profile("Reused").unwrap(),
+            2,
+            "a deleted id is handed out again"
+        );
+        state.workspaces[0].id = usize::MAX - 2;
+        let private = state.open_private_tab();
+        let private = state
+            .tabs
+            .iter()
+            .find(|tab| tab.id == private)
+            .unwrap()
+            .workspace_id;
+        assert!(
+            private < usize::MAX - 2,
+            "the private profile takes a free id instead of overflowing"
+        );
+        assert!(state.workspaces.iter().any(|w| w.private && w.id == private));
     }
 
     #[test]
