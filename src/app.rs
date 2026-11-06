@@ -169,6 +169,7 @@ pub enum Command {
         value: serde_json::Value,
     },
     ResetSettings,
+    OpenProfileFolder,
     InstallAdBlocker,
     OpenExtensionsFolder,
     ClearBrowsingData {
@@ -2113,6 +2114,13 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             },
                             Command::Print => if let Some(view) = views.get(&state.active_tab_id) { let _ = view.print(); },
                             Command::Exit => if may_exit(&state, &session) { *flow = ControlFlow::Exit; },
+                            Command::OpenProfileFolder => {
+                                let directory = profile::directory();
+                                let _ = std::fs::create_dir_all(&directory);
+                                if let Err(error) = std::process::Command::new(updater::system_binary("explorer.exe")).arg(&directory).spawn() {
+                                    state.update_status = Some(format!("Could not open the profile folder: {error}"));
+                                }
+                            },
                             Command::DefaultBrowser => { if let Err(error) = std::process::Command::new(updater::system_binary("explorer.exe")).arg("ms-settings:defaultapps").spawn() { state.update_status = Some(format!("Could not open Windows default apps: {error}")); } },
                             Command::DismissUpdate { version } => { if version.len() <= 100 { state.dismissed_update_version = Some(version); } },
                             Command::CheckUpdates => if !check_busy {
