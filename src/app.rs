@@ -51,6 +51,12 @@ pub enum Command {
     },
     SleepInactiveTabs,
     ClearUnpinnedTabs,
+    CloseOtherTabs {
+        id: usize,
+    },
+    CloseTabsBelow {
+        id: usize,
+    },
     ToggleSidebar,
     Peek {
         open: bool,
@@ -1854,6 +1860,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 let ids: Vec<_> = state.tabs.iter().filter(|tab| tab.id != active && tab.workspace_id == state.active_workspace_id && !tab.is_pinned && downloads.get(&tab.id).copied().unwrap_or(0) == 0).map(|tab| tab.id).collect();
                                 for id in ids { state.close_tab(id); }
                             },
+                            Command::CloseOtherTabs { id } => { state.close_other_tabs(id); },
+                            Command::CloseTabsBelow { id } => { state.close_tabs_below(id); },
                             Command::ToggleSidebar => { state.toggle_sidebar(); },
                             Command::Peek { open } => { state.sidebar_peek = open && state.sidebar_collapsed; },
                             Command::TopbarPeek { open } => { state.topbar_peek = open; },

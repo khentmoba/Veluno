@@ -446,6 +446,52 @@ impl BrowserState {
         true
     }
 
+    /// Closes every unpinned tab in this workspace except `tab_id`; returns how many closed.
+    pub fn close_other_tabs(&mut self, tab_id: usize) -> usize {
+        let Some(workspace) = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id == tab_id)
+            .map(|tab| tab.workspace_id)
+        else {
+            return 0;
+        };
+        let ids: Vec<_> = self
+            .tabs
+            .iter()
+            .filter(|tab| {
+                tab.id != tab_id && tab.workspace_id == workspace && !tab.is_pinned
+            })
+            .map(|tab| tab.id)
+            .collect();
+        for id in &ids {
+            self.close_tab(*id);
+        }
+        self.switch_tab(tab_id);
+        ids.len()
+    }
+
+    /// Closes the unpinned tabs after `tab_id` in its own pin group.
+    pub fn close_tabs_below(&mut self, tab_id: usize) -> usize {
+        let Some(index) = self.tabs.iter().position(|tab| tab.id == tab_id) else {
+            return 0;
+        };
+        let workspace = self.tabs[index].workspace_id;
+        let pinned = self.tabs[index].is_pinned;
+        let ids: Vec<_> = self
+            .tabs
+            .iter()
+            .skip(index + 1)
+            .filter(|tab| tab.workspace_id == workspace && tab.is_pinned == pinned)
+            .map(|tab| tab.id)
+            .collect();
+        for id in &ids {
+            self.close_tab(*id);
+        }
+        self.switch_tab(tab_id);
+        ids.len()
+    }
+
     pub fn restore_closed_tab(&mut self) -> Option<usize> {
         if let Some(mut tab) = self.closed_tabs.pop() {
             tab.id = self.allocate_tab_id();
@@ -1209,6 +1255,28 @@ mod tests {
         )
         .unwrap();
         assert_eq!(older.zoom, 100, "sessions saved before zoom existed still load");
+    }
+
+    #[test]
+    fn closing_other_and_below_tabs_stays_in_the_workspace_and_keeps_pins() {
+        let mut state = BrowserState::new();
+        let first = state.active_tab_id;
+        let pinned = state.add_tab(Some("https://example.com/pinned".into()), true);
+        let second = state.add_tab(Some("https://example.com/2".into()), false);
+        let third = state.add_tab(Some("https://example.com/3".into()), false);
+        state.create_profile("Other").unwrap();
+        let other = state.add_tab(Some("https://example.org/".into()), false);
+        state.switch_workspace(1);
+        assert_eq!(state.close_tabs_below(second), 1, "only the tab after it closes");
+        assert!(state.tabs.iter().any(|tab| tab.id == second));
+        assert!(!state.tabs.iter().any(|tab| tab.id == third));
+        assert!(state.tabs.iter().any(|tab| tab.id == other), "other workspaces are untouched");
+        assert_eq!(state.active_tab_id, second);
+        assert_eq!(state.close_other_tabs(second), 1, "the unpinned opener closes");
+        assert!(!state.tabs.iter().any(|tab| tab.id == first));
+        assert!(state.tabs.iter().any(|tab| tab.id == pinned), "pins survive");
+        assert_eq!(state.active_tab_id, second);
+        assert_eq!(state.closed_tabs.len(), 2, "both closes are restorable");
     }
 
     #[test]

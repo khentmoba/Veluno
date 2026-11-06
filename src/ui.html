@@ -550,6 +550,10 @@ function openTabContextMenu(tab,clientY) {
   for(const space of others) addItem(`Move to ${space.name}`,()=>Veluno.send('move_tab_to_workspace',{id:tab.id,workspace_id:space.id}));
  }
  tabMenu.append(document.createElement('hr'));
+ const closable=currentState.tabs.filter(other=>other.id!==tab.id&&other.workspace_id===tab.workspace_id&&!other.is_pinned).length;
+ addItem('Close other tabs',()=>Veluno.send('close_other_tabs',{id:tab.id}),closable===0);
+ const below=currentState.tabs.slice(currentState.tabs.findIndex(other=>other.id===tab.id)+1).filter(other=>other.workspace_id===tab.workspace_id&&other.is_pinned===tab.is_pinned).length;
+ addItem('Close tabs below',()=>Veluno.send('close_tabs_below',{id:tab.id}),below===0);
  addItem('Close tab',()=>Veluno.send('close_tab',{id:tab.id}));
  tabMenu.hidden=false;
  const maxTop=Math.max(8,window.innerHeight-tabMenu.offsetHeight-8);
