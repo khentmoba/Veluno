@@ -343,54 +343,40 @@ fn leave_content_fullscreen(
     }
 }
 
-fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, Rect, Rect, Rect) {
+fn bounds(window: &Window, reveal: f64, dock: f64, top: f64) -> (Rect, Rect, Rect, Rect) {
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
     let full = ui::SIDEBAR_WIDTH_EXPANDED;
     let hot = ui::SIDEBAR_HOT_ZONE;
-    let (side_x, side_width) = if !state.sidebar_collapsed {
-        (0., full)
-    } else {
-        let right = (full * side).max(hot);
-        // Keep WebView2 at full width so revealing it never resizes its surface.
-        (right - full, full)
-    };
     let right = settings::sidebar_right();
+    let pushed = full * dock;
+    let right_edge = (full * reveal).max(hot);
+    let side_x = right_edge - full;
     // The right-hand layout mirrors the left one horizontally.
     let side_x = if right {
-        size.width - side_x - side_width
+        size.width - side_x - full
     } else {
         side_x
-    };
-    let top_left = if state.sidebar_collapsed || right {
-        0.
-    } else {
-        full
-    };
-    let top_width = if right && !state.sidebar_collapsed {
-        size.width - full
-    } else {
-        size.width - top_left
     };
     let margin = if window.is_maximized() || window.fullscreen().is_some() {
         0.
     } else {
         ui::WINDOW_MARGIN
     };
-    let content_left = if state.sidebar_collapsed || right {
-        margin
+    let (content_left, content_right) = if right {
+        (margin, pushed + margin)
     } else {
-        full + margin
+        (pushed + margin, margin)
     };
-    let content_right = if state.sidebar_collapsed || !right {
-        margin
+    let (top_left, top_width) = if right {
+        (0., size.width - pushed)
     } else {
-        full + margin
+        (pushed, size.width - pushed)
     };
     let top_height = ui::TOPBAR_HOT_ZONE + (ui::TOPBAR_EXPANDED - ui::TOPBAR_HOT_ZONE) * top;
     (
         Rect {
             position: Position::Logical(LogicalPosition::new(side_x, 0.)),
-            size: Size::Logical(LogicalSize::new(side_width, size.height)),
+            size: Size::Logical(LogicalSize::new(full, size.height)),
         },
         Rect {
             position: Position::Logical(LogicalPosition::new(content_left, margin)),
@@ -411,15 +397,21 @@ fn bounds(window: &Window, state: &BrowserState, side: f64, top: f64) -> (Rect, 
 }
 
 /// Takes the side web panel from the content edge away from the sidebar.
-fn side_panel_bounds(content: Rect, scale: f64, sidebar_right: bool) -> (Rect, Rect) {
+fn side_panel_bounds(
+    content: Rect,
+    scale: f64,
+    sidebar_right: bool,
+    progress: f64,
+) -> (Rect, Rect) {
     let position = content.position.to_logical::<f64>(scale);
     let size = content.size.to_logical::<f64>(scale);
     let width = ui::SIDE_PANEL_WIDTH.min(size.width * 0.45);
-    let rest = (size.width - width - ui::WINDOW_MARGIN).max(10.);
+    let offset = (width + ui::WINDOW_MARGIN) * progress;
+    let rest = (size.width - offset).max(10.);
     let (panel_x, content_x) = if sidebar_right {
-        (position.x, position.x + width + ui::WINDOW_MARGIN)
+        (position.x - width + width * progress, position.x + offset)
     } else {
-        (position.x + rest + ui::WINDOW_MARGIN, position.x)
+        (position.x + size.width - width * progress, position.x)
     };
     let rect = |x: f64, width: f64| Rect {
         position: Position::Logical(LogicalPosition::new(x, position.y)),
@@ -529,10 +521,7 @@ fn split_bounds(content: Rect, scale: f64) -> (Rect, Rect) {
     )
 }
 
-fn step(progress: f64, target: f64, dt: f64, snap: bool) -> f64 {
-    if snap {
-        return target;
-    }
+fn step(progress: f64, target: f64, dt: f64) -> f64 {
     let amount = dt / if target > progress { 0.30 } else { 0.22 };
     if target > progress {
         (progress + amount).min(target)
@@ -542,7 +531,8 @@ fn step(progress: f64, target: f64, dt: f64, snap: bool) -> f64 {
 }
 
 fn ease(progress: f64) -> f64 {
-    1. - (1. - progress).powi(3)
+    let p = progress.clamp(0., 1.);
+    p * p * p * (p * (p * 6. - 15.) + 10.)
 }
 
 #[derive(Clone)]
@@ -839,8 +829,9 @@ fn content(
     let popup = proxy.clone();
     let popup_host = popup_host.clone();
     let navigation = proxy.clone();
+    let initial_dock = if state.sidebar_collapsed { 0. } else { 1. };
     let mut builder = WebViewBuilder::new_with_web_context(context)
-        .with_bounds(bounds(window, state, 0., 0.).1)
+        .with_bounds(bounds(window, initial_dock, initial_dock, 0.).1)
         .with_visible(false)
         .with_focused(false)
         .with_incognito(private)
@@ -1179,8 +1170,10 @@ fn build_chrome_views(
 ) -> wry::Result<(WebView, WebView, permission::Prompt, WebView, WebView)> {
     let ui_proxy = proxy.clone();
     let ready = proxy.clone();
+    let initial_dock = if state.sidebar_collapsed { 0. } else { 1. };
+    let initial_bounds = bounds(window, initial_dock, initial_dock, 0.);
     let mut sidebar_builder = WebViewBuilder::new_with_web_context(chrome_context)
-        .with_bounds(bounds(window, state, 0., 0.).0)
+        .with_bounds(initial_bounds.0)
         .with_html(ui::get_ui_html())
         .with_focused(false)
         .with_clipboard(true)
@@ -1204,7 +1197,7 @@ fn build_chrome_views(
     let palette_proxy = proxy.clone();
     let palette_ready = proxy.clone();
     let mut palette_builder = WebViewBuilder::new_with_web_context(chrome_context)
-        .with_bounds(bounds(window, state, 0., 0.).2)
+        .with_bounds(initial_bounds.2)
         .with_visible(false)
         .with_focused(false)
         .with_transparent(true)
@@ -1237,7 +1230,7 @@ fn build_chrome_views(
     let topbar_ready = proxy.clone();
     let topbar_proxy = proxy.clone();
     let mut topbar_builder = WebViewBuilder::new_with_web_context(chrome_context)
-        .with_bounds(bounds(window, state, 0., 0.).3)
+        .with_bounds(initial_bounds.3)
         .with_html(ui::get_topbar_html())
         .with_focused(false)
         .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:text/html;"))
@@ -1416,8 +1409,14 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut last_loading = false;
     let mut cursor_pos = (100., 100.);
     let mut popup_loading = false;
-    let mut side_progress = if state.sidebar_collapsed { 0. } else { 1. };
+    let mut dock_progress = if state.sidebar_collapsed { 0. } else { 1. };
+    let mut reveal_progress = dock_progress;
     let mut top_progress = 0.;
+    let mut panel_progress = if state.side_panel_open && state.side_panel_url.is_some() {
+        1.
+    } else {
+        0.
+    };
     let mut animating = false;
     let animating_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let frame_thread = {
@@ -2306,77 +2305,138 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                 Err(error) => { state.split = None; state.update_status = Some(format!("Could not open split view: {error}")); },
             }
         }
-        let pair = state.split_pair().filter(|_| content_fullscreen.is_none());
         hidden_at.retain(|id, _| views.contains_key(id));
         state.zoom = state.active_tab().map_or(100, |tab| tab.zoom);
         let now = std::time::Instant::now();
-        let dt = if animating { now.duration_since(last_frame).as_secs_f64().min(0.05) } else { 0. };
+        let dt = if animating {
+            now.duration_since(last_frame).as_secs_f64().min(0.05)
+        } else {
+            0.
+        };
         last_frame = now;
-        let side_target = if !state.sidebar_collapsed || state.sidebar_peek { 1. } else { 0. };
+        let dock_target: f64 = if !state.sidebar_collapsed { 1. } else { 0. };
+        let peek_target: f64 = if state.sidebar_collapsed && state.sidebar_peek {
+            1.
+        } else {
+            0.
+        };
+        let reveal_target = dock_target.max(peek_target);
         let top_target = if state.topbar_peek { 1. } else { 0. };
-        side_progress = step(side_progress, side_target, dt, !state.sidebar_collapsed);
-        top_progress = step(top_progress, top_target, dt, false);
+        let panel_target = if state.side_panel_open
+            && state.side_panel_url.is_some()
+            && content_fullscreen.is_none()
+        {
+            1.
+        } else {
+            0.
+        };
+        reveal_progress = step(reveal_progress, reveal_target, dt);
+        dock_progress = step(dock_progress, dock_target, dt);
+        top_progress = step(top_progress, top_target, dt);
+        panel_progress = step(panel_progress, panel_target, dt);
         let was_animating = animating;
-        animating = side_progress != side_target || top_progress != top_target;
+        animating = reveal_progress != reveal_target
+            || dock_progress != dock_target
+            || top_progress != top_target
+            || panel_progress != panel_target;
         if animating != was_animating {
             animating_flag.store(animating, std::sync::atomic::Ordering::Relaxed);
-            if animating { frame_thread.thread().unpark(); }
+            if animating {
+                frame_thread.thread().unpark();
+            }
         }
-        let (mut sidebar_bounds, mut content_bounds, overlay_bounds, mut topbar_bounds) = bounds(&window, &state, ease(side_progress), ease(top_progress));
+        let (mut sidebar_bounds, mut content_bounds, overlay_bounds, mut topbar_bounds) = bounds(
+            &window,
+            ease(reveal_progress),
+            ease(dock_progress),
+            ease(top_progress),
+        );
         if content_fullscreen.is_some() {
             // The page fills the window while it is fullscreen, so the browser chrome steps aside.
             let size = window.inner_size().to_logical::<f64>(window.scale_factor());
-            content_bounds = Rect { position: Position::Logical(LogicalPosition::new(0., 0.)), size: Size::Logical(size) };
-            sidebar_bounds = Rect { position: Position::Logical(LogicalPosition::new(0., 0.)), size: Size::Logical(LogicalSize::new(0., 0.)) };
+            content_bounds = Rect {
+                position: Position::Logical(LogicalPosition::new(0., 0.)),
+                size: Size::Logical(size),
+            };
+            sidebar_bounds = Rect {
+                position: Position::Logical(LogicalPosition::new(0., 0.)),
+                size: Size::Logical(LogicalSize::new(0., 0.)),
+            };
             topbar_bounds = sidebar_bounds;
         }
         let _ = sidebar.set_bounds(sidebar_bounds);
-        if tick {
-            let _ = topbar.set_bounds(topbar_bounds);
-            return;
-        }
-        let content_bounds = match state.side_panel_url.clone().filter(|_| state.side_panel_open && content_fullscreen.is_none()) {
-            Some(url) => {
-                let (rest, panel_rect) = side_panel_bounds(content_bounds, window.scale_factor(), settings::sidebar_right());
+        let content_bounds = if content_fullscreen.is_none()
+            && (panel_progress > 0. || panel_target > 0.)
+        {
+            let (rest, panel_rect) = side_panel_bounds(
+                content_bounds,
+                window.scale_factor(),
+                settings::sidebar_right(),
+                ease(panel_progress),
+            );
+            if let Some(url) = state.side_panel_url.clone() {
                 if panel.as_ref().is_none_or(|(_, loaded)| loaded != &url) {
                     panel = None;
                     panel_placed = None;
                     match side_panel(&window, &mut context, &url, panel_rect, &proxy) {
                         Ok(view) => panel = Some((view, url)),
-                        Err(error) => { state.side_panel_open = false; state.update_status = Some(format!("Could not open the side panel: {error}")); },
+                        Err(error) => {
+                            state.side_panel_open = false;
+                            state.update_status =
+                                Some(format!("Could not open the side panel: {error}"));
+                        }
                     }
                 }
                 if let Some((view, _)) = &panel {
                     if panel_placed != Some(panel_rect) {
                         let _ = view.set_bounds(panel_rect);
                         let physical = panel_rect.size.to_physical::<i32>(window.scale_factor());
-                        let radius = if window.is_maximized() || window.fullscreen().is_some() { 0 } else { (ui::CONTENT_RADIUS * window.scale_factor()) as i32 };
+                        let radius = if window.is_maximized() || window.fullscreen().is_some() {
+                            0
+                        } else {
+                            (ui::CONTENT_RADIUS * window.scale_factor()) as i32
+                        };
                         desktop::round(view, physical.width, physical.height, radius);
                         panel_placed = Some(panel_rect);
                     }
-                    if !panel_shown { desktop::show(view, true); panel_shown = true; }
+                    if !panel_shown {
+                        desktop::show(view, true);
+                        panel_shown = true;
+                    }
                 }
-                if state.side_panel_open { rest } else { content_bounds }
             }
-            None => {
-                if panel_shown && let Some((view, _)) = &panel { desktop::show(view, false); }
-                panel_shown = false;
-                content_bounds
+            rest
+        } else {
+            if panel_shown && let Some((view, _)) = &panel {
+                desktop::show(view, false);
             }
+            panel_shown = false;
+            content_bounds
         };
+        let pair = state.split_pair().filter(|_| content_fullscreen.is_none());
         let panes = split_bounds(content_bounds, window.scale_factor());
-        let pane = |id: usize| match pair { Some([left, _]) if id == left => panes.0, Some([_, right]) if id == right => panes.1, _ => content_bounds };
+        let pane = |id: usize| match pair {
+            Some([left, _]) if id == left => panes.0,
+            Some([_, right]) if id == right => panes.1,
+            _ => content_bounds,
+        };
         // A page in HTML fullscreen is the only pane on screen, even when it is the split partner.
         let wanted: Vec<usize> = content_fullscreen.map_or_else(
-            || pair.map_or_else(|| vec![active_id], |pair| pair.to_vec()),
+            || pair.map_or_else(|| vec![active_id], |p| p.to_vec()),
             |(id, _)| vec![id],
         );
         if wanted != shown || created {
             for id in shown.iter().filter(|id| !wanted.contains(id)) {
-                if let Some(view) = views.get(id) { desktop::show(view, false); hidden_at.entry(*id).or_insert((now, false)); }
+                if let Some(view) = views.get(id) {
+                    desktop::show(view, false);
+                    hidden_at.entry(*id).or_insert((now, false));
+                }
             }
             for id in &wanted {
-                if let Some(view) = views.get(id) { desktop::show(view, true); hidden_at.remove(id); }
+                if let Some(view) = views.get(id) {
+                    desktop::show(view, true);
+                    hidden_at.remove(id);
+                }
             }
             shown.clone_from(&wanted);
         }
@@ -2384,19 +2444,32 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         for id in &wanted {
             if let Some(view) = views.get(id) {
                 let target = pane(*id);
-                if placed.get(id) != Some(&target) { let _ = view.set_bounds(target); placed.insert(*id, target); }
+                if placed.get(id) != Some(&target) {
+                    let _ = view.set_bounds(target);
+                    placed.insert(*id, target);
+                }
             }
         }
-        let radius = if window.is_maximized() || window.fullscreen().is_some() { 0 } else { (ui::CONTENT_RADIUS * window.scale_factor()) as i32 };
+        let radius = if window.is_maximized() || window.fullscreen().is_some() {
+            0
+        } else {
+            (ui::CONTENT_RADIUS * window.scale_factor()) as i32
+        };
         rounded.retain(|id, _| views.contains_key(id));
         for id in &wanted {
             if let Some(view) = views.get(id) {
                 let physical = pane(*id).size.to_physical::<i32>(window.scale_factor());
                 let shape = (physical.width, physical.height, radius);
-                if rounded.get(id) != Some(&shape) { desktop::round(view, shape.0, shape.1, radius); rounded.insert(*id, shape); }
+                if rounded.get(id) != Some(&shape) {
+                    desktop::round(view, shape.0, shape.1, radius);
+                    rounded.insert(*id, shape);
+                }
             }
         }
         let _ = topbar.set_bounds(topbar_bounds);
+        if tick {
+            return;
+        }
         if !palette_open {
             if state.sidebar_collapsed {
                 desktop::raise(&sidebar);
@@ -2415,7 +2488,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             desktop::raise(&sidebar);
         }
         if visible_id != Some(active_id) && !palette_open {
-            if !headless && let Some(view) = views.get(&active_id) { let _ = view.focus(); }
+            if !headless && let Some(view) = views.get(&active_id) {
+                let _ = view.focus();
+            }
             visible_id = Some(active_id);
         }
         state.is_loading = state.active_tab().is_some_and(|tab| tab.is_loading);
@@ -2516,5 +2591,69 @@ mod tests {
         hidden_at.remove(&2);
         hidden_at.insert(2, (old, false));
         assert_eq!(take_tabs_to_trim(&mut hidden_at, 1), vec![2]);
+    }
+
+    #[test]
+    fn animation_step_and_easing_progress_smoothly() {
+        assert_eq!(ease(0.), 0.);
+        assert_eq!(ease(1.), 1.);
+        assert_eq!(ease(0.5), 0.5);
+        assert!(ease(0.3) < 0.3);
+        assert!(ease(0.7) > 0.7);
+
+        let p1 = step(0., 1., 0.05);
+        assert!(p1 > 0. && p1 < 1.);
+        let p2 = step(p1, 1., 0.05);
+        assert!(p2 > p1 && p2 < 1.);
+
+        let r1 = step(1., 0., 0.05);
+        assert!(r1 < 1. && r1 > 0.);
+        let r2 = step(r1, 0., 0.05);
+        assert!(r2 < r1 && r2 > 0.);
+    }
+
+    #[test]
+    fn peek_to_dock_handoff_retains_reveal_without_wobble() {
+        let mut dock_progress = 0.0;
+        let mut reveal_progress = 1.0;
+
+        let dock_target: f64 = 1.0;
+        let peek_target: f64 = 0.0;
+        let reveal_target = dock_target.max(peek_target);
+
+        assert_eq!(reveal_target, 1.0);
+        for _ in 0..10 {
+            reveal_progress = step(reveal_progress, reveal_target, 0.016);
+            dock_progress = step(dock_progress, dock_target, 0.016);
+            assert_eq!(
+                reveal_progress, 1.0,
+                "Sidebar reveal must remain 1.0 during peek-to-dock handoff"
+            );
+            assert!(dock_progress > 0.0, "Dock progress should rise");
+        }
+    }
+
+    #[test]
+    fn side_panel_bounds_interpolate_with_progress() {
+        let content = Rect {
+            position: Position::Logical(LogicalPosition::new(0., 0.)),
+            size: Size::Logical(LogicalSize::new(1000., 800.)),
+        };
+        let (closed_content, closed_panel) = side_panel_bounds(content, 1.0, false, 0.0);
+        assert_eq!(closed_content.size.to_logical::<f64>(1.0).width, 1000.);
+        assert_eq!(closed_panel.position.to_logical::<f64>(1.0).x, 1000.);
+
+        let (half_content, _) = side_panel_bounds(content, 1.0, false, 0.5);
+        let (open_content, open_panel) = side_panel_bounds(content, 1.0, false, 1.0);
+        let open_width = open_panel.size.to_logical::<f64>(1.0).width;
+        assert!(half_content.size.to_logical::<f64>(1.0).width < 1000.);
+        assert!(
+            half_content.size.to_logical::<f64>(1.0).width
+                > open_content.size.to_logical::<f64>(1.0).width
+        );
+        assert_eq!(
+            open_content.size.to_logical::<f64>(1.0).width,
+            1000. - open_width - ui::WINDOW_MARGIN
+        );
     }
 }
