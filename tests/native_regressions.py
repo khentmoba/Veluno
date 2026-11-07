@@ -20,6 +20,7 @@ from tab_input import check_tab_input
 from update_restore import check_update_restore
 from content_fullscreen import check_content_fullscreen
 from topbar_animation import check_topbar_animation
+from layout_transition import check_layout_transition
 
 
 def visible_panels(process_id):
@@ -124,6 +125,7 @@ def main():
     parser.add_argument('--exe', default='target/debug/veluno.exe')
     args = parser.parse_args()
     check_topbar_animation(args.exe)
+    check_layout_transition(args.exe)
     check_cache_recovery(args.exe)
     check_tab_input(args.exe)
     check_recovery(args.exe)
