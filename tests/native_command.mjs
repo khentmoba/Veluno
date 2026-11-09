@@ -29,6 +29,7 @@ while (Date.now() < deadline) {
     const evaluate = expression => send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture: true });
     const probe = await evaluate(targetUrl ? 'true' : "Boolean(document.getElementById('url-input') && window.ipc?.postMessage && window.updateState)");
     if (probe.result?.result?.value) {
+      if (targetUrl) await send('Page.bringToFront');
       const response = await evaluate(expression);
       // Type like a user into whatever the expression focused.
       if (text) await send('Input.insertText', { text });

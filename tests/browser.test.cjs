@@ -22,8 +22,14 @@ for (const [input, expected] of [
   ['a.b search', 'https://search.brave.com/search?q=a.b%20search'],
   ['rust & café #東京', 'https://search.brave.com/search?q=rust%20%26%20caf%C3%A9%20%23%E6%9D%B1%E4%BA%AC'],
   ['javascript:alert(1)', 'https://search.brave.com/search?q=javascript%3Aalert(1)'],
+  ['drive.google.com', 'https://drive.google.com/drive'],
+  ['https://drive.google.com', 'https://drive.google.com/drive'],
+  ['https://drive.google.com/', 'https://drive.google.com/drive'],
+  ['https://drive.google.com/drive/folders/123', 'https://drive.google.com/drive/folders/123'],
 ]) assert.equal(resolve(input), expected, input);
 for (const [input, expected] of [
+  ['@drive semester notes', 'https://drive.google.com/drive/search?q=semester%20notes'],
+  ['@drive', 'https://drive.google.com/drive'],
   ['@yt lofi beats', 'https://www.youtube.com/results?search_query=lofi%20beats'],
   ['@GH  veluno ', 'https://github.com/search?q=veluno'],
   ['@w', 'https://en.wikipedia.org/'],

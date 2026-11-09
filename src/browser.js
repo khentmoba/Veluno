@@ -8,6 +8,7 @@
   }
   // Search keywords: '@yt cats' searches YouTube; a bare '@yt' opens the site.
   const keywords = {
+    drive: ['Google Drive', 'https://drive.google.com/drive/search?q=', 'https://drive.google.com/drive'],
     yt: ['YouTube', 'https://www.youtube.com/results?search_query=', 'https://www.youtube.com/'],
     gh: ['GitHub', 'https://github.com/search?q=', 'https://github.com/'],
     w: ['Wikipedia', 'https://en.wikipedia.org/w/index.php?search=', 'https://en.wikipedia.org/'],
@@ -32,9 +33,13 @@
     if (shortcut) return shortcut.url;
     const internal=text.startsWith('felaris://')?'veluno://'+text.slice(10):text;
     if (['veluno://newtab','veluno://blank','veluno://settings','veluno://history'].includes(internal)) return internal;
+    if (/^https?:\/\/drive\.google\.com\/?(?:\?[^#]*)?(?:#.*)?$/i.test(text) || /^drive\.google\.com\/?(?:\?[^#]*)?(?:#.*)?$/i.test(text)) {
+      return 'https://drive.google.com/drive';
+    }
     if (/^(https?:\/\/|file:\/\/)/i.test(text)) return text;
     if (!/\s/.test(text) && /^(localhost(?=[:/]|$)|\[[0-9a-f:]+\](?=[:/]|$)|[^/:]+\.[^/:]+)(:\d+)?([/?#].*)?$/i.test(text)) {
-      return (/^(localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(text) ? 'http://' : 'https://') + text;
+      const url = (/^(localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(text) ? 'http://' : 'https://') + text;
+      return /^https?:\/\/drive\.google\.com\/?(?:\?[^#]*)?(?:#.*)?$/i.test(url) ? 'https://drive.google.com/drive' : url;
     }
     return window.Veluno.searchUrl + encodeURIComponent(text);
   }

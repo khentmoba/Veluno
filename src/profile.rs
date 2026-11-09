@@ -69,8 +69,17 @@ pub fn normalize_url(value: &str) -> Option<String> {
     if is_internal(value) {
         return Some(value.into());
     }
-    let url = url::Url::parse(value).ok()?;
-    matches!(url.scheme(), "http" | "https" | "file").then(|| url.into())
+    let mut url = url::Url::parse(value).ok()?;
+    if matches!(url.scheme(), "http" | "https")
+        && url.host_str() == Some("drive.google.com")
+        && (url.path() == "/" || url.path().is_empty())
+        && url.query().is_none()
+        && url.fragment().is_none()
+    {
+        url.set_path("/drive");
+        return Some(url.into());
+    }
+    matches!(url.scheme(), "http" | "https" | "file" | "blob").then(|| url.into())
 }
 
 pub fn web_origin(value: &str) -> Option<String> {
@@ -227,6 +236,27 @@ mod tests {
         assert_eq!(
             normalize_url("veluno://settings").as_deref(),
             Some("veluno://settings")
+        );
+        assert_eq!(
+            normalize_url("https://drive.google.com").as_deref(),
+            Some("https://drive.google.com/drive")
+        );
+        assert_eq!(
+            normalize_url("https://drive.google.com/").as_deref(),
+            Some("https://drive.google.com/drive")
+        );
+        assert_eq!(
+            normalize_url("https://drive.google.com/drive/my-drive").as_deref(),
+            Some("https://drive.google.com/drive/my-drive")
+        );
+        assert_eq!(
+            normalize_url("blob:https://drive.google.com/7b1486be-4607-d53d-9f93-841b7c776bc5")
+                .as_deref(),
+            Some("blob:https://drive.google.com/7b1486be-4607-d53d-9f93-841b7c776bc5")
+        );
+        assert_eq!(
+            normalize_url("blob:null/8a8e96d5-bb10-4eb2-b3a2-ec53bf8c0044").as_deref(),
+            Some("blob:null/8a8e96d5-bb10-4eb2-b3a2-ec53bf8c0044")
         );
         assert!(normalize_url("veluno://other").is_none());
     }
