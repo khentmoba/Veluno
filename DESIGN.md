@@ -13,7 +13,7 @@ Operate mode: a Zen-inspired desktop sidebar, not a browser feature clone. Keep 
 
 ## Visual system
 
-User-requested black theme: sidebar `#101011`, page `#0c0c0e`, neutral accent `#dedee3`, primary text `#f5f5f7`. Sidebar surfaces `#1b1b1e`, active tab `#2e2e33`, secondary text `#b2b2b8`. The native Windows title bar also uses dark mode. The floating search panel uses `#171719` over a translucent black scrim. Use solid fills rather than decorative gradients/glows. Mostly 8–10px control corners, 40px tab rows, 32px navigation buttons, and consistent authored stroke icons. Active state comes from fill and weight, not color alone. Focus rings are 2px; address/search fields instead highlight the containing form. Loading animation respects reduced-motion preferences.
+User-requested black theme: sidebar `#101011`, page `#0c0c0e`, neutral accent `#dedee3`, primary text `#f8f8fa`. Sidebar and page surfaces `#1c1c21` / `#232329`, borders `#3b3b44`–`#3f3f49`, active tab `#32323b`, secondary text `#c8c8d2`. The native Windows title bar also uses dark mode. The floating search panel uses `#1c1c21` over a translucent black scrim. Use solid fills and crisp borders/inner highlights rather than decorative gradients/glows. Mostly 8–10px control corners, 40px tab rows, 32px navigation buttons, and consistent authored stroke icons. Active state comes from fill, inner border, and weight, not color alone. Focus rings are 2px; address/search fields instead highlight the containing form. Loading animation respects reduced-motion preferences.
 
 ## Interaction contracts
 

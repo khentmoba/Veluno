@@ -96,26 +96,26 @@
   shadow.innerHTML = `<style>
 :host{color-scheme:dark}
 *{box-sizing:border-box}
-.page{position:absolute;inset:0;overflow:auto;background:#0c0c0e;color:#e6e6ea;outline:0;font:var(--size,19px)/1.7 Georgia,Cambria,"Times New Roman",serif}
-.bar{position:sticky;top:0;display:flex;align-items:center;gap:6px;padding:10px 16px;background:#101011;border-bottom:1px solid #2e2e33;font:13px "Segoe UI",system-ui,sans-serif;color:#b2b2b8;z-index:1}
-.bar .label{flex:1;font-weight:600;color:#f5f5f7}
-button{font:inherit;color:#f5f5f7;background:#1b1b1e;border:1px solid #3a3a40;border-radius:8px;height:30px;min-width:34px;padding:0 10px;cursor:pointer}
-button:hover{background:#27272b}
+.page{position:absolute;inset:0;overflow:auto;scrollbar-width:thin;scrollbar-color:#3f3f49 transparent;background:#0c0c0e;color:#f0f0f4;outline:0;font:var(--size,19px)/1.72 Georgia,Cambria,"Times New Roman",serif}
+.bar{position:sticky;top:0;display:flex;align-items:center;gap:6px;padding:10px 16px;background:#101011;border-bottom:1px solid #3b3b44;font:13px "Segoe UI",system-ui,sans-serif;color:#c8c8d2;z-index:1}
+.bar .label{flex:1;font-weight:600;color:#f8f8fa}
+button{font:500 13px "Segoe UI",system-ui,sans-serif;color:#f8f8fa;background:#232329;border:1px solid #3f3f49;border-radius:8px;height:30px;min-width:34px;padding:0 10px;cursor:pointer}
+button:hover{background:#2e2e36}
 button:focus-visible{outline:2px solid #dedee3;outline-offset:2px}
 main{max-width:700px;margin:0 auto;padding:40px 24px 120px}
-.site{font:13px "Segoe UI",system-ui,sans-serif;color:#b2b2b8;margin:0 0 10px;text-transform:uppercase;letter-spacing:.06em}
-h1.title{font:600 2em/1.2 "Segoe UI",system-ui,sans-serif;letter-spacing:-.02em;margin:0 0 12px;color:#f5f5f7}
-.meta{font:13px "Segoe UI",system-ui,sans-serif;color:#b2b2b8;margin:0 0 32px;padding-bottom:20px;border-bottom:1px solid #2e2e33}
-article h1,article h2,article h3,article h4{font-family:"Segoe UI",system-ui,sans-serif;line-height:1.3;color:#f5f5f7;margin:1.6em 0 .5em}
+.site{font:600 12px "Segoe UI",system-ui,sans-serif;color:#c8c8d2;margin:0 0 10px;text-transform:uppercase;letter-spacing:.06em}
+h1.title{font:600 2em/1.2 "Segoe UI",system-ui,sans-serif;letter-spacing:-.02em;margin:0 0 12px;color:#f8f8fa}
+.meta{font:13px "Segoe UI",system-ui,sans-serif;color:#c8c8d2;margin:0 0 32px;padding-bottom:20px;border-bottom:1px solid #3b3b44}
+article h1,article h2,article h3,article h4{font-family:"Segoe UI",system-ui,sans-serif;line-height:1.3;color:#f8f8fa;margin:1.6em 0 .5em}
 article p,article ul,article ol,article blockquote,article pre,article figure,article table{margin:0 0 1.1em}
-article a{color:#dedee3;text-decoration-color:#6b6b73;text-underline-offset:3px}
+article a{color:#f8f8fa;text-decoration-color:#8a8a96;text-underline-offset:3px}
 article img{display:block;max-width:100%;height:auto;margin:1.2em auto;border-radius:8px}
-article figcaption{font:13px/1.5 "Segoe UI",system-ui,sans-serif;color:#b2b2b8;text-align:center}
-article blockquote{border-left:3px solid #3a3a40;padding-left:16px;color:#c9c9cf}
-article pre{overflow:auto;padding:14px;background:#1b1b1e;border-radius:8px;font:14px/1.5 Consolas,monospace}
+article figcaption{font:13px/1.5 "Segoe UI",system-ui,sans-serif;color:#c8c8d2;text-align:center}
+article blockquote{border-left:2px solid #484854;padding-left:16px;color:#d8d8e0}
+article pre{overflow:auto;padding:14px;background:#1c1c21;border:1px solid #3b3b44;border-radius:8px;font:14px/1.5 Consolas,monospace}
 article code{font-family:Consolas,monospace;font-size:.88em}
 article table{border-collapse:collapse;display:block;overflow:auto;font-size:.85em}
-article th,article td{border:1px solid #3a3a40;padding:6px 10px}
+article th,article td{border:1px solid #3f3f49;padding:6px 10px}
 ::selection{background:#45454b;color:#fff}
 </style><div class="page" tabindex="-1"><div class="bar" role="toolbar" aria-label="Reader view"><span class="label">Reader view</span><button data-size="-1" aria-label="Smaller text" title="Smaller text">A−</button><button data-size="1" aria-label="Larger text" title="Larger text">A+</button><button data-close title="Close reader view (Esc or F9)">Close</button></div><main><p class="site"></p><h1 class="title"></h1><p class="meta"></p></main></div>`;
   const page = shadow.querySelector('.page');
