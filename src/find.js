@@ -12,12 +12,13 @@
   shadow.innerHTML = `<style>
 :host{color-scheme:dark}
 *{box-sizing:border-box}
-.bar{display:flex;align-items:center;gap:6px;padding:8px;background:#171719;border:1px solid #3a3a40;border-radius:10px;box-shadow:0 12px 30px #0008;font:13px "Segoe UI",system-ui,sans-serif;color:#f5f5f7}
-input{width:190px;height:28px;padding:0 8px;background:#0c0c0e;color:#f5f5f7;border:1px solid #3a3a40;border-radius:6px;font:inherit;outline:0}
+.bar{display:flex;align-items:center;gap:6px;padding:8px;background:#1c1c21;border:1px solid #484854;border-radius:10px;box-shadow:inset 0 1px 0 rgb(255 255 255 / .06),0 14px 34px #0009;font:13px "Segoe UI",system-ui,sans-serif;color:#f8f8fa}
+input{width:190px;height:28px;padding:0 8px;background:#101012;color:#f8f8fa;border:1px solid #3f3f49;border-radius:6px;font:inherit;outline:0}
+input::placeholder{color:#c8c8d2;opacity:1}
 input:focus{border-color:#dedee3}
-.count{min-width:74px;color:#b2b2b8;font-size:12px}
-button{height:28px;min-width:28px;padding:0 8px;background:#1b1b1e;color:#f5f5f7;border:1px solid #3a3a40;border-radius:6px;font:inherit;cursor:pointer}
-button:hover{background:#27272b}
+.count{min-width:74px;color:#c8c8d2;font-size:12px;font-variant-numeric:tabular-nums}
+button{height:28px;min-width:28px;padding:0 8px;background:#282830;color:#f8f8fa;border:1px solid #3f3f49;border-radius:6px;font:inherit;cursor:pointer}
+button:hover{background:#34343e}
 button:focus-visible{outline:2px solid #dedee3;outline-offset:2px}
 </style><div class="bar" role="search" aria-label="Find in page"><input type="text" aria-label="Find in page" placeholder="Find in page" autocomplete="off" spellcheck="false"><span class="count" role="status" aria-live="polite"></span><button data-step="-1" aria-label="Previous match" title="Previous match (Shift+Enter)">↑</button><button data-step="1" aria-label="Next match" title="Next match (Enter)">↓</button><button data-close aria-label="Close find bar" title="Close (Esc)">✕</button></div>`;
 

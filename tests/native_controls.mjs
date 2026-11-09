@@ -100,6 +100,7 @@ export async function checkBrowserControls(sidebar, command, origin, port, artif
   await command('set_setting', { key: 'accent', value: 'neutral' });
   await until(() => sidebar.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()==='#dedee3'`), 'accent resets');
   console.log('Accent color changes apply live to the sidebar.');
+  await command('close_downloads');
   await checkSplitView(sidebar, command, awakened, a, b, origin, port, artifacts);
   const space = await sidebar.evaluate('currentState.active_workspace_id');
   await sidebar.evaluate(`document.getElementById('profiles').open=true;document.querySelector('#workspace-emojis button[aria-label="Use \u{1F4DA} as the workspace icon"]').click();true`);

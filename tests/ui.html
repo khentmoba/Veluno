@@ -286,6 +286,7 @@ window.runChecks=async()=>{
  n.openNewTab(structuredClone(fixtureState));
  check('palette canvas stays transparent',n.getComputedStyle(nd.documentElement).colorScheme==='normal'&&n.getComputedStyle(nd.documentElement).backgroundColor==='rgba(0, 0, 0, 0)'&&n.getComputedStyle(nd.querySelector('.palette')).colorScheme==='dark');
  check('black theme is shared',d.defaultView.getComputedStyle(d.body).backgroundColor==='rgb(16, 16, 17)'&&page.contentWindow.getComputedStyle(p.body).backgroundColor==='rgb(12, 12, 14)');
+ check('high-contrast text tokens meet WCAG AAA across surfaces',d.defaultView.getComputedStyle(d.body).color==='rgb(248, 248, 250)'&&d.defaultView.getComputedStyle(d.getElementById('tab-count')).color==='rgb(200, 200, 210)'&&page.contentWindow.getComputedStyle(p.body).color==='rgb(248, 248, 250)'&&page.contentWindow.getComputedStyle(p.querySelector('.intro')).color==='rgb(200, 200, 210)');
  const beforeReopen=messages.length;
  nd.getElementById('dismiss').click();
  n.dispatchEvent(new KeyboardEvent('keydown',{key:'t',ctrlKey:true}));await settle();
@@ -312,6 +313,11 @@ window.runChecks=async()=>{
  failedAddressImage.dispatchEvent(new Event('error'));
  check('address failed icon retains visible fallback',!failedAddressIcon.querySelector('img')&&failedAddressIcon.querySelector('svg').style.visibility!=='hidden');
  check('address icons reject unsafe favicon schemes and internal targets',w.addressOptionIcon({url:location.origin+'/safe',favicon:'javascript:alert(1)'}).querySelector('img').src===location.origin+'/assets/favicon.svg'&&!w.addressOptionIcon({url:'veluno://settings'}).querySelector('img'));
+ w.updateState({...structuredClone(fixtureState),downloads_open:true});
+ addressChange('github');
+ check('downloads panel opens',!d.getElementById('downloads-panel').hidden&&ar.hidden);
+ w.focusAddress();
+ check('focusing address bar closes downloads panel to prevent overlap',messages.some(m=>m.action==='close_downloads')&&d.getElementById('downloads-panel').hidden);
  ai.blur();
  const controlState=structuredClone(fixtureState);
  controlState.active_tab_id=3; controlState.tabs[2].is_playing_audio=true;
