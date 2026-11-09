@@ -6,7 +6,7 @@ try {
   if (mode !== '--diagnostics') {
     const sidebar = await connect(page => page.title === 'Veluno', chromePort);
     const deadline = Date.now() + 10000;
-    while (!await sidebar.evaluate('!!currentState?.tabs?.some(tab => tab.id === currentState.active_tab_id && !tab.is_loading)')) {
+    while (!await sidebar.evaluate("typeof currentState === 'object' && !!currentState?.tabs?.some(tab => tab.id === currentState.active_tab_id && !tab.is_loading)")) {
       if (Date.now() > deadline) throw Error('Capture fixture did not finish loading');
       await new Promise(resolve => setTimeout(resolve, 100));
     }

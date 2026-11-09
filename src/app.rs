@@ -480,6 +480,7 @@ fn side_panel(
         .with_bounds(bounds)
         .with_focused(false)
         .with_clipboard(true)
+        .with_devtools(true)
         .with_navigation_handler(move |target| {
             let allowed = is_valid_navigation(&target);
             if !allowed {
@@ -658,6 +659,7 @@ fn open_popup(
         .with_bounds(content_rect)
         .with_focused(!host.headless)
         .with_clipboard(true)
+        .with_devtools(true)
         .with_document_title_changed_handler(move |text| {
             let _ = title_proxy.send_event(UserEvent::PopupTitle(text));
         })
@@ -733,6 +735,7 @@ fn open_glance(
         .with_bounds(popup_bounds(&host.window).1)
         .with_focused(!host.headless)
         .with_clipboard(true)
+        .with_devtools(true)
         .with_initialization_script(GLANCE_SCRIPT)
         .with_document_title_changed_handler(move |text| {
             let _ = title_proxy.send_event(UserEvent::PopupTitle(text));
@@ -836,6 +839,7 @@ fn content(
         .with_visible(false)
         .with_focused(false)
         .with_incognito(private)
+        .with_devtools(true)
         .with_initialization_script(&script)
         .with_initialization_script(include_str!("sleep.js"))
         .with_document_title_changed_handler(move |text| {

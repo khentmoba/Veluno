@@ -88,6 +88,7 @@
 | `Ctrl + J` | Open Downloads |
 | `Ctrl + +` / `Ctrl + -` / `Ctrl + 0` | Zoom in, zoom out, or reset zoom |
 | `F11` | Toggle full screen |
+| `F12` | Open developer tools for the current page |
 | `Alt + Click` (on a link) | Preview the link in Glance |
 | `Esc` (in Glance) | Close the preview |
 | `Enter` (in URL bar) | Smart navigate (detects URLs vs. web search) |

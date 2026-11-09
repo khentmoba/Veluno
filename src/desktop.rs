@@ -339,6 +339,29 @@ pub fn show(view: &WebView, visible: bool) {
     }
 }
 
+/// Whether WebView2 opens DevTools for this view, through F12 and the context menu.
+/// `None` means the setting could not be read, which is not the same as disabled.
+pub fn devtools_enabled(view: &WebView) -> Option<bool> {
+    #[cfg(windows)]
+    // SAFETY: `view.webview()` is borrowed for the call. The settings interface is returned owned, and the
+    // out-parameter points at a live `BOOL` on this stack frame for the duration of the call.
+    unsafe {
+        use windows::core::BOOL;
+        use wry::WebViewExtWindows;
+        let mut enabled = BOOL::default();
+        view.webview()
+            .Settings()
+            .and_then(|settings| settings.AreDevToolsEnabled(&mut enabled))
+            .ok()
+            .map(|()| enabled.as_bool())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = view;
+        None
+    }
+}
+
 /// Trims a background tab's renderer memory after an idle duration.
 pub fn trim_memory(view: &WebView) {
     #[cfg(windows)]
