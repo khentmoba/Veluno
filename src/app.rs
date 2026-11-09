@@ -423,16 +423,14 @@ fn side_panel_bounds(
 #[cfg(windows)]
 fn content_browser_arguments() -> String {
     let mut args = String::from(
-        "--enable-features=BackForwardCache,ParallelDownloading,CanvasOopRasterization,IntensiveWakeUpThrottling,ThrottleDisplayNoneAndVisibilityHiddenCrossOriginIframes,CalculateNativeWinOcclusion,WebRtcHideLocalIpsWithMdns \
-         --disable-features=Translate,OptimizationHints,MediaRouter \
+        "--enable-features=BackForwardCache,ParallelDownloading,WebRtcHideLocalIpsWithMdns \
+         --disable-features=Translate,OptimizationHints,MediaRouter,CalculateNativeWinOcclusion \
+         --disable-backgrounding-occluded-windows \
          --enable-gpu-rasterization \
          --enable-zero-copy \
          --enable-smooth-scrolling \
-         --enable-hardware-overlays=\"single-fullscreen,single-on-top,underlay\" \
          --disk-cache-size=1073741824 \
-         --media-cache-size=268435456 \
-         --disable-background-timer-throttling=false \
-         --disable-renderer-backgrounding=false",
+         --media-cache-size=268435456",
     );
     if crate::settings::performance_mode() {
         args.push_str(" --enable-low-end-device-mode");
@@ -450,7 +448,8 @@ pub(crate) fn chrome_browser_arguments() -> String {
         "--enable-gpu-rasterization \
          --enable-zero-copy \
          --enable-smooth-scrolling \
-         --disable-features=Translate,OptimizationHints,MediaRouter",
+         --disable-features=Translate,OptimizationHints,MediaRouter,CalculateNativeWinOcclusion \
+         --disable-backgrounding-occluded-windows",
     );
     if let Ok(extra) = std::env::var("VELUNO_SMOKE_BROWSER_ARGUMENTS") {
         args.push(' ');
