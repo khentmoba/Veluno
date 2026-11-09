@@ -146,7 +146,7 @@ def await_report(process, path):
             print(json.dumps(result))
             if not result['success']:
                 raise AssertionError(result)
-            return
+            return result
         if process.poll() is not None:
             raise AssertionError(f'Veluno exited with {process.returncode} before writing {path}')
         time.sleep(.1)
@@ -171,7 +171,8 @@ def main():
     try:
         with (artifacts / 'first.log').open('w') as log:
             process = subprocess.Popen([str(executable), origin + '/'], env=environment, stdout=log, stderr=log)
-            await_report(process, artifacts / 'first.json')
+            first = await_report(process, artifacts / 'first.json')
+            assert first['devtools'] is True, 'F12 must open DevTools in content views'
             session = json.loads((artifacts / 'profile/session.json').read_text(encoding='utf-8'))
             assert session['active_workspace_id'] == 2
             assert any(tab['is_pinned'] for tab in session['tabs'])

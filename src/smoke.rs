@@ -1,6 +1,6 @@
 use crate::{
     app::{Command, UserEvent},
-    profile,
+    desktop, profile,
     state::BrowserState,
 };
 use std::{collections::HashMap, path::PathBuf};
@@ -14,6 +14,7 @@ pub struct Smoke {
     ticks: usize,
     first: usize,
     restore: bool,
+    devtools: bool,
     done: bool,
 }
 
@@ -34,12 +35,13 @@ impl Smoke {
             ticks: 0,
             first: 0,
             restore: std::env::var_os("VELUNO_SMOKE_RESTORE").is_some(),
+            devtools: false,
             done: false,
         })
     }
 
     fn finish(&mut self, success: bool, message: &str) -> bool {
-        let report = serde_json::json!({ "success":success, "message":message, "phase":self.phase, "restore":self.restore });
+        let report = serde_json::json!({ "success":success, "message":message, "phase":self.phase, "restore":self.restore, "devtools":self.devtools });
         let _ = profile::write_atomic(&self.report, report.to_string().as_bytes());
         self.done = true;
         !success || std::env::var_os("VELUNO_SMOKE_HOLD").is_none()
@@ -135,6 +137,7 @@ impl Smoke {
         let Some(view) = views.get(&tab.id) else {
             return false;
         };
+        self.devtools = desktop::devtools_enabled(view);
         if self.restore && self.phase == 0 {
             if state.active_workspace_id != 2 || !state.tabs.iter().any(|tab| tab.is_pinned) {
                 return self.finish(false, "Session or pinned tabs were lost");
