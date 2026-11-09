@@ -459,6 +459,14 @@ pub(crate) fn chrome_browser_arguments() -> String {
     args
 }
 
+fn is_valid_navigation(url: &str) -> bool {
+    profile::allowed_url(url)
+        || url == "about:blank"
+        || url == "about:srcdoc"
+        || url.starts_with("blob:")
+        || url.starts_with("data:")
+}
+
 /// The docked side web panel. It shares the tab profile, so sign-ins carry over.
 fn side_panel(
     window: &Window,
@@ -474,9 +482,7 @@ fn side_panel(
         .with_focused(false)
         .with_clipboard(true)
         .with_navigation_handler(move |target| {
-            let allowed = profile::allowed_url(&target)
-                || target == "about:blank"
-                || target.starts_with("data:text/html;");
+            let allowed = is_valid_navigation(&target);
             if !allowed {
                 let _ = nav_proxy.send_event(UserEvent::Status(
                     "This link uses an unsupported application protocol.".into(),
@@ -485,7 +491,7 @@ fn side_panel(
             allowed
         })
         .with_new_window_req_handler(move |target, _| {
-            if profile::allowed_url(&target) {
+            if is_valid_navigation(&target) {
                 let _ =
                     tab_proxy.send_event(UserEvent::Command(Command::NewTab { url: Some(target) }));
             }
@@ -657,9 +663,7 @@ fn open_popup(
             let _ = title_proxy.send_event(UserEvent::PopupTitle(text));
         })
         .with_navigation_handler(move |target| {
-            let allowed = profile::allowed_url(&target)
-                || target == "about:blank"
-                || target.starts_with("data:text/html;");
+            let allowed = is_valid_navigation(&target);
             if !allowed {
                 let _ = nav_proxy.send_event(UserEvent::Status(
                     "This link uses an unsupported application protocol.".into(),
@@ -668,7 +672,7 @@ fn open_popup(
             allowed
         })
         .with_new_window_req_handler(move |target, _| {
-            if profile::allowed_url(&target) {
+            if is_valid_navigation(&target) {
                 let _ =
                     tab_proxy.send_event(UserEvent::Command(Command::NewTab { url: Some(target) }));
             }
@@ -735,9 +739,7 @@ fn open_glance(
             let _ = title_proxy.send_event(UserEvent::PopupTitle(text));
         })
         .with_navigation_handler(move |target| {
-            let allowed = profile::allowed_url(&target)
-                || target == "about:blank"
-                || target.starts_with("data:text/html;");
+            let allowed = is_valid_navigation(&target);
             if !allowed {
                 let _ = nav_proxy.send_event(UserEvent::Status(
                     "This link uses an unsupported application protocol.".into(),
@@ -746,7 +748,7 @@ fn open_glance(
             allowed
         })
         .with_new_window_req_handler(move |target, _| {
-            if profile::allowed_url(&target) {
+            if is_valid_navigation(&target) {
                 let _ =
                     tab_proxy.send_event(UserEvent::Command(Command::NewTab { url: Some(target) }));
             }
@@ -841,9 +843,7 @@ fn content(
             let _ = title.send_event(UserEvent::Title(id, generation, text));
         })
         .with_navigation_handler(move |url| {
-            let allowed = profile::allowed_url(&url)
-                || url == "about:blank"
-                || url.starts_with("data:text/html;");
+            let allowed = is_valid_navigation(&url);
             if !allowed {
                 let _ = navigation.send_event(UserEvent::Status(
                     "This link uses an unsupported application protocol.".into(),
@@ -855,13 +855,14 @@ fn content(
             let is_popup = features.size.is_some()
                 || features.position.is_some()
                 || profile::is_auth_url(&url);
+            let valid = is_valid_navigation(&url);
             if is_popup
-                && (url == "about:blank" || profile::allowed_url(&url))
+                && valid
                 && let Some(response) = open_popup(&popup_host, &url, &features, private, &popup)
             {
                 return response;
             }
-            if profile::allowed_url(&url) {
+            if valid {
                 let _ = popup.send_event(UserEvent::Command(Command::NewTab { url: Some(url) }));
             }
             NewWindowResponse::Deny

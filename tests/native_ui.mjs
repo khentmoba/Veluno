@@ -114,6 +114,17 @@ try {
   await press(palette, 'Escape');
   await until(() => palette.evaluate('input.readOnly'), 'reduced-motion cancel');
   assert.equal(await restored.evaluate('typeof window.ipc'), 'undefined', 'pages keep their own ipc global, as Google Keep needs');
+  assert.equal(await restored.evaluate('Veluno.resolveAddress("drive.google.com")'), 'https://drive.google.com/drive', 'drive.google.com resolves directly to the drive app');
+  assert.equal(await restored.evaluate('Veluno.resolveAddress("@drive")'), 'https://drive.google.com/drive', '@drive keyword resolves to the drive app');
+  await restored.evaluate(`(()=>{
+    const blob = new Blob(['<!doctype html><p>preview</p>'], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const frame = document.createElement('iframe');
+    frame.src = url;
+    document.body.appendChild(frame);
+  })()`);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.notEqual(await sidebar.evaluate('currentState.update_status'), 'This link uses an unsupported application protocol.', 'blob preview frames are not blocked as unsupported protocols');
   const beforePageIpc = await sidebar.evaluate('currentState.tabs.length');
   await restored.evaluate('Veluno.send("new_tab"); Veluno.send("duplicate_tab", { id: 1 }); Veluno.send("move_tab_to_workspace", { id: 1, workspace_id: 2 }); Veluno.send("expand_popup", { url: "https://example.com" })');
   await new Promise(resolve => setTimeout(resolve, 200));

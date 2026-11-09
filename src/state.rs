@@ -1077,6 +1077,10 @@ impl BrowserState {
         }
         let raw_host = host_port.strip_prefix("www.").unwrap_or(&host_port);
         let (host, root_url) = match raw_host {
+            "drive.google.com" => (
+                "drive.google.com",
+                "https://drive.google.com/drive".to_string(),
+            ),
             "m.youtube.com" => ("youtube.com", "https://youtube.com".to_string()),
             "twitter.com" | "mobile.twitter.com" => ("x.com", "https://x.com".to_string()),
             "old.reddit.com" => ("reddit.com", "https://reddit.com".to_string()),
@@ -1094,6 +1098,7 @@ impl BrowserState {
 
     fn label_for_host(host: &str) -> String {
         match host {
+            "drive.google.com" => "Google Drive".to_string(),
             "youtube.com" | "m.youtube.com" => "YouTube".to_string(),
             "x.com" | "twitter.com" => "X".to_string(),
             "github.com" => "GitHub".to_string(),
@@ -1945,5 +1950,14 @@ mod tests {
         state.move_tab_to_workspace(1, 3);
         assert_eq!(state.active_workspace_id, 3);
         assert_eq!(state.active_tab_id, 1);
+    }
+
+    #[test]
+    fn google_drive_shortcut_origin_points_to_drive_app() {
+        let (host, root_url, label) =
+            BrowserState::shortcut_origin("https://drive.google.com/drive/u/0/my-drive").unwrap();
+        assert_eq!(host, "drive.google.com");
+        assert_eq!(root_url, "https://drive.google.com/drive");
+        assert_eq!(label, "Google Drive");
     }
 }
