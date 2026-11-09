@@ -173,7 +173,7 @@ def main():
             process = subprocess.Popen([str(executable), origin + '/'], env=environment, stdout=log, stderr=log)
             first = await_report(process, artifacts / 'first.json')
             assert first['devtools'] is True, 'F12 must open DevTools in content views'
-            assert first['chrome_devtools'] is False, 'Sidebar and palette must not open DevTools in release builds'
+            assert first['chrome_devtools'] is first['debug_build'], 'Sidebar and palette DevTools must follow the build default: off in release builds, on in debug builds'
             session = json.loads((artifacts / 'profile/session.json').read_text(encoding='utf-8'))
             assert session['active_workspace_id'] == 2
             assert any(tab['is_pinned'] for tab in session['tabs'])

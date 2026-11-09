@@ -340,7 +340,8 @@ pub fn show(view: &WebView, visible: bool) {
 }
 
 /// Whether WebView2 opens DevTools for this view, through F12 and the context menu.
-pub fn devtools_enabled(view: &WebView) -> bool {
+/// `None` means the setting could not be read, which is not the same as disabled.
+pub fn devtools_enabled(view: &WebView) -> Option<bool> {
     #[cfg(windows)]
     // SAFETY: `view.webview()` is borrowed for the call. The settings interface is returned owned, and the
     // out-parameter points at a live `BOOL` on this stack frame for the duration of the call.
@@ -351,13 +352,13 @@ pub fn devtools_enabled(view: &WebView) -> bool {
         view.webview()
             .Settings()
             .and_then(|settings| settings.AreDevToolsEnabled(&mut enabled))
-            .is_ok()
-            && enabled.as_bool()
+            .ok()
+            .map(|()| enabled.as_bool())
     }
     #[cfg(not(windows))]
     {
         let _ = view;
-        false
+        None
     }
 }
 

@@ -14,8 +14,8 @@ pub struct Smoke {
     ticks: usize,
     first: usize,
     restore: bool,
-    devtools: bool,
-    chrome_devtools: bool,
+    devtools: Option<bool>,
+    chrome_devtools: Option<bool>,
     done: bool,
 }
 
@@ -36,14 +36,14 @@ impl Smoke {
             ticks: 0,
             first: 0,
             restore: std::env::var_os("VELUNO_SMOKE_RESTORE").is_some(),
-            devtools: false,
-            chrome_devtools: false,
+            devtools: None,
+            chrome_devtools: None,
             done: false,
         })
     }
 
     fn finish(&mut self, success: bool, message: &str) -> bool {
-        let report = serde_json::json!({ "success":success, "message":message, "phase":self.phase, "restore":self.restore, "devtools":self.devtools, "chrome_devtools":self.chrome_devtools });
+        let report = serde_json::json!({ "success":success, "message":message, "phase":self.phase, "restore":self.restore, "devtools":self.devtools, "chrome_devtools":self.chrome_devtools, "debug_build":cfg!(debug_assertions) });
         let _ = profile::write_atomic(&self.report, report.to_string().as_bytes());
         self.done = true;
         !success || std::env::var_os("VELUNO_SMOKE_HOLD").is_none()
@@ -140,8 +140,13 @@ impl Smoke {
             return false;
         };
         self.devtools = desktop::devtools_enabled(view);
-        self.chrome_devtools =
-            desktop::devtools_enabled(sidebar) || desktop::devtools_enabled(palette);
+        self.chrome_devtools = match (
+            desktop::devtools_enabled(sidebar),
+            desktop::devtools_enabled(palette),
+        ) {
+            (Some(sidebar), Some(palette)) => Some(sidebar || palette),
+            _ => None,
+        };
         if self.restore && self.phase == 0 {
             if state.active_workspace_id != 2 || !state.tabs.iter().any(|tab| tab.is_pinned) {
                 return self.finish(false, "Session or pinned tabs were lost");
