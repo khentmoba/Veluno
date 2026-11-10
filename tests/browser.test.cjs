@@ -68,6 +68,13 @@ assert.equal(display('http://example.com/a'),'http://example.com/a','HTTP keeps 
 assert.equal(display('veluno://newtab'),'');
 assert.equal(display(''),'');
 assert.equal(display('not a url'),'not a url');
+const detailOf=window.Veluno.suggestionDetail;
+assert.equal(detailOf({id:3,url:'https://example.com'}),'Switch to tab','open tabs say so instead of repeating the address');
+assert.equal(detailOf({history:true,url:'https://www.example.com/a?b=1'}),'example.com','saved sites show their bare host');
+assert.equal(detailOf({shortcut:true,url:'http://localhost:5173/dev'}),'localhost','a port is not part of the host line');
+assert.equal(detailOf({search:true,detail:'Search with Brave'}),'Search with Brave');
+assert.equal(detailOf({search:false,url:'https://x.com',detail:'Open in a new tab'}),'Open address');
+assert.equal(detailOf({url:'not a url'}),'');
 const summary=window.Veluno.downloadSummary;
 assert.equal(summary([]).label,'','an empty list has no summary');
 assert.equal(summary([{id:1,status:'complete',received:1048576}]).label,'1 file · 1.0 MB');

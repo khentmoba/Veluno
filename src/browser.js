@@ -130,6 +130,11 @@
     if(fallback) options.push(fallback);
     return options.sort((a,b)=>b.score-a.score).map(item=>item.option);
   }
+  function suggestionDetail(option) {
+    if (option.id != null) return 'Switch to tab';
+    if ('search' in option) return option.detail === 'Open in a new tab' ? 'Open address' : option.detail;
+    try { return new URL(option.url).hostname.replace(/^www\./, ''); } catch { return ''; }
+  }
   // The blurred address: an HTTPS page shows its host, and a non-default port stays visible.
   function displayAddress(url) {
     if (!url || url === 'veluno://newtab') return '';
@@ -171,7 +176,7 @@
         : '',
     };
   }
-  window.Veluno = { send, resolveAddress, suggestions, highlight, downloadSummary, displayAddress, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
+  window.Veluno = { send, resolveAddress, suggestions, suggestionDetail, highlight, downloadSummary, displayAddress, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
   const postShortcut = post;
   const stringify = JSON.stringify;
   window.addEventListener('keydown', event => {
