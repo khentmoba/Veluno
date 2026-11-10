@@ -54,15 +54,18 @@ request uses the existing release without a version bump or rebuild.
    a PR is not an automatic fallback.
 4. Wait for successful Windows push CI on the exact current `origin/main` SHA.
    From a clean checkout of that commit, run `python scripts/build.py --dry-run`,
-   then `python scripts/build.py` to package, publish GitHub assets, and notify Discord.
+   then `python scripts/build.py` to fetch the CI-built assets, publish them, and
+   notify Discord.
 5. Verify the tag points to the release commit and all three assets are uploaded.
    Inspect `python scripts/notify_discord.py --dry-run` before a manual announcement.
    Confirm Discord returned a message ID and that the message attaches
    `veluno-setup.exe` or links to that installer on the matching release. Retain
    the release URL and message ID in the result.
 
-GitHub publication reads committed metadata, verifies the package, and pins the tag
-to that SHA. GitHub failures stop the Discord announcement; `--skip-github` is the
+Publication does not rebuild. It downloads the `Veluno-Windows` artifact from the
+passing push CI run for the release SHA, verifies it against that run's `SHA256SUMS`,
+and pins the tag to that SHA. CI artifacts expire after 90 days; a release older than
+that needs a CI rerun first. `gh` is required even with `--skip-github`. GitHub failures stop the Discord announcement; `--skip-github` is the
 explicit Discord-only path. Preparation and publication are separate commands;
 `--dry-run` validates without building or publishing.
 

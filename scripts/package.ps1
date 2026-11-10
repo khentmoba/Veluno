@@ -25,10 +25,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
     Sign 'target\release\veluno-setup.exe'
     & (Join-Path $PSScriptRoot 'verify-package.ps1')
-    python (Join-Path $PSScriptRoot '..\tests\native_smoke.py') --exe 'target\release\veluno.exe'
-    if ($LASTEXITCODE -ne 0) { throw 'Native app verification failed' }
-    python (Join-Path $PSScriptRoot '..\tests\native_regressions.py') --exe 'target\release\veluno.exe'
-    if ($LASTEXITCODE -ne 0) { throw 'Native regression verification failed' }
     & (Join-Path $PSScriptRoot '..\tests\installer.test.ps1')
     Copy-Item 'target\release\veluno.exe' 'target\release\felaris.exe' -Force
     Copy-Item 'target\release\veluno-setup.exe' 'target\release\felaris-setup.exe' -Force

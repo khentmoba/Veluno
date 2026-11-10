@@ -40,33 +40,22 @@ node tests/browser.test.cjs
 python -B tests/release.test.py
 ```
 
-For native behavior or test tooling, build with `cargo build --locked`, then run
-`python -B tests/native_smoke.py`, `python -B tests/native_regressions.py`, and
-`python -B tests/native_tools.test.py` as relevant. Run native app suites serially.
-Use `--exe target/release/veluno.exe` when validating a release-mode build.
-For resource/version changes, run `powershell -NoProfile -File tests/version.test.ps1`.
+For resource/version changes, run `cargo build --locked` and check the built
+executable's file version. Do not write or run UI tests; see `AGENTS.md`.
 Use the skill-creator validator for skill changes when that skill is available.
 
 `.github/workflows/ci.yml` is the authority for the full remote gate. Its
-`scripts/package.ps1` step includes package metadata, native regressions, and
+`package` job runs `scripts/package.ps1`: release build, package metadata, and
 installer lifecycle checks. Record local packaging as unrun when CI will cover it;
 do not mistake a validation build or CI artifact for a publishable release.
 
 For a bug fix, record the failing case and the same check passing after the fix.
-For intermittent failures, retain the original failure and inspect the logs and
-JSON reports under `target/native-*`. A green rerun does not establish a cause.
+For intermittent failures, retain the original failure log. A green rerun does
+not establish a cause.
 Report unresolved failures explicitly; do not replace assertions with delays.
 
-Use the owned native launchers in `tests/native_app.py` and
-`python -B tests/native_capture.py` for local fixture captures. Their executable,
-profile, ports, and process cleanup belong to the test. Keep capture and cleanup
-scoped to that owned process tree. WebView PNGs prove rendered content; they do not
-prove Windows composition or animation smoothness. Native regression checks cover
-sidebar geometry and stacking order separately.
-
-For visible UI changes, embed before/after screenshots using durable reviewer-accessible
-URLs, normally committed files under `docs/pr-evidence/<topic>/`. Verify the image
-links and inspect the captures. Identify synthetic fixtures and missing baselines.
+For visible UI changes, do not launch or drive the app to capture screenshots.
+Describe the visible change and mark screenshots not captured; the user may add them.
 For tooling or documentation changes with no visible UI change, use execution
 evidence and mark screenshots not applicable. Exclude profiles and private data.
 

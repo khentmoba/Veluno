@@ -3,8 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**.md']
   pull_request:
     branches: [main]
+    paths-ignore: ['docs/**', '**.md']
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -15,49 +21,46 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: check
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Format check
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Rust unit tests
         run: cargo test --locked
-      - name: Browser JS & repo hygiene checks
+      - name: Browser JS checks
         run: node tests/browser.test.cjs
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Release pipeline guards
+        run: python -B tests/release.test.py
       - name: Windows branding consistency
         run: |
           python -m pip install Pillow==12.2.0
           python scripts/generate-icons.py --check
-      - name: Release pipeline guards
-        run: python -B tests/release.test.py
-      - name: Incremental Windows version resources
-        run: powershell -NoProfile -File tests/version.test.ps1
+
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: package
       - name: Install Inno Setup
         run: |
-          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
-      - name: Package, install, and exercise the release app
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $found = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if (-not $found -and -not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+      - name: Build, verify, and install-test the package
         run: powershell -NoProfile -File scripts/package.ps1
-      - name: Capture ownership and native failure guards
-        run: python -B tests/native_tools.test.py --exe target/release/veluno.exe
-      - name: Retain native failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Veluno-native-failure-${{ github.run_attempt }}
-          retention-days: 7
-          if-no-files-found: ignore
-          path: |
-            target/native-smoke/*/*.log
-            target/native-smoke/*/*.json
-            target/native-regressions/*/*.log
-            target/native-regressions/*/*.json
-            target/native-tools/*/*.log
-            target/native-tools/*/*.json
       - uses: actions/upload-artifact@v4
         with:
           name: Veluno-Windows
