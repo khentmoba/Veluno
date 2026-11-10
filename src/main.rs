@@ -12,7 +12,6 @@ mod profile;
 mod recovery;
 mod session;
 mod settings;
-mod smoke;
 mod start_page;
 mod state;
 mod ui;

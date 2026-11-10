@@ -105,32 +105,10 @@ function run(before, after, assert, performance, iterations = 150) {
   }
   return { equivalence, results, method: 'Median of seven alternating samples; 2,000 history entries, 24 tabs, 100 bookmarks. Times include cloning for replaced-history workload.' };
 }
-async function main() {
-  let report;
-  if (process.argv.includes('--port')) {
-    const { connect, closeConnections } = await import('./native_cdp.mjs');
-    try {
-      const port = process.argv[process.argv.indexOf('--port') + 1];
-      const view = await connect(page => page.title === 'Veluno', port);
-      const deadline = Date.now() + 10000;
-      while (!await view.evaluate('Boolean(window.Veluno?.suggestions)')) {
-        if (Date.now() >= deadline) throw Error('Sidebar suggestions were not ready');
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-      const expression = `(() => {
-        const before = new Function('let Veluno;const window={addEventListener(){}};' + ${JSON.stringify(baselineSource)} + ';Veluno=window.Veluno;return Veluno.suggestions;')();
-        const assert = { deepEqual(a,b,message) { if(JSON.stringify(a)!==JSON.stringify(b)) throw Error(message||'Suggestions changed'); } };
-        return (${run.toString()})(before,window.Veluno.suggestions,assert,performance,300);
-      })()`;
-      report = await view.evaluate(expression);
-    } finally {
-      closeConnections();
-    }
-  } else {
-    report = run(load(baselineSource), load(candidateSource), assert, performance);
-  }
+function main() {
+  const report = run(load(baselineSource), load(candidateSource), assert, performance);
   console.log(report.equivalence);
   console.table(report.results);
   console.log(report.method);
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+main();

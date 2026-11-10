@@ -273,8 +273,6 @@ pub enum UserEvent {
     PermissionRequested,
     PermissionReady,
     PermissionResponse(u64, bool),
-    SmokeTick,
-    SmokeResult(usize, bool),
     Command(Command),
     Ready,
     PaletteReady,
@@ -1477,18 +1475,6 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut content_fullscreen: Option<(usize, bool)> = None;
     // Whether the window was maximized before the app fullscreened it.
     let mut maximize_after_fullscreen = false;
-    let mut smoke = crate::smoke::Smoke::new();
-    if smoke.is_some() {
-        let proxy = proxy.clone();
-        std::thread::spawn(move || {
-            for _ in 0..300 {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                if proxy.send_event(UserEvent::SmokeTick).is_err() {
-                    break;
-                }
-            }
-        });
-    }
     let background = proxy.clone();
     if !headless {
         if extensions::enabled_at_startup() {
@@ -1746,12 +1732,6 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                     UserEvent::PermissionResponse(token, allow) => {
                         if permission_prompt.respond(token, allow, &state) && !headless && let Some(view) = views.get(&state.active_tab_id) { let _ = view.focus(); }
                     },
-                    UserEvent::SmokeTick => {
-                        if let Some(smoke) = &mut smoke && smoke.tick(&state, &views, &sidebar, &palette, &proxy, &session) { *flow = ControlFlow::Exit; }
-                    }
-                    UserEvent::SmokeResult(phase, success) => {
-                        if let Some(smoke) = &mut smoke && smoke.result(phase, success, &proxy) { *flow = ControlFlow::Exit; }
-                    }
                     UserEvent::Ready => { last_sidebar_state.clear(); },
                     UserEvent::TopbarReady => { last_loading = false; },
                     UserEvent::PopupReady => {

@@ -158,32 +158,21 @@ for measured rebuild and suggestion timings.
 
 ---
 
-## UI Verification
+## Checks
 
 ```bash
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 node tests/browser.test.cjs
+python -B tests/release.test.py
 ```
 
-For the DOM interaction checks, serve the repository with `python -m http.server 0` (using an ephemeral port so worktrees do not collide), then open `http://localhost:<port>/tests/ui.html`. This is a fixture with sample tabs; its IPC messages are recorded rather than sent to Rust. Test both 1380×860 and the minimum 640×480 desktop window; the compact rail can be inspected by setting `fixtureState.sidebar_collapsed = true`, `sidebar.style.width = '56px'`, and calling `sidebar.contentWindow.updateState(fixtureState)` in the test page console.
+Veluno has no automated UI tests: no WebView2 drivers, DOM fixtures, or screenshot
+suites. Put logic where unit tests can reach it (Rust modules, or the pure functions
+in `src/browser.js` covered by `tests/browser.test.cjs`).
 
-To exercise actual WebView2 keyboard input and Rust IPC on Windows, build with `cargo build` and run the self-contained native smoke test with Python 3.11+ and Node 22+. The Node command delegates to the headless regression harness, which copies the executable, uses an isolated profile and dynamic debugging port, and cleans up the child process. It also runs the DOM checks at 1380×860 and 640×480, including reduced motion:
-
-```bash
-cargo build
-node tests/native-smoke.cjs
-```
-
-Native results and diagnostic logs are saved under `target/native-regressions/`. On failure, `failure.json` and `debugger.json` record the active tab, focus, sidebar state, recent keyboard input, and isolated debugger targets. Windows CI retains the top-level native logs and JSON reports for seven days after a failure; browser profiles are excluded. The same suite is mandatory during packaging and CI.
-
-Suggestion ranking can be compared against an earlier commit with `node tests/suggestions.bench.cjs --baseline <git-ref>`. After building, `python -B tests/native_suggestions.py --baseline <git-ref>` runs the same comparison in a hidden WebView2 app with an isolated profile. Both check identical results before timing six workloads with 2,000 history entries, including replaced history objects. Results are medians of seven alternating samples and measure suggestion computation, not page loading or rendering.
-
-For repeatable visual captures, run `python -B tests/native_capture.py` after building. It launches its own hidden app against local fixtures, uses a separate executable, profile, and debugging ports, and stops only its owned process tree. PNGs and a target manifest are saved under `target/native-capture/`. These are WebView captures; they do not prove native window composition or animation smoothness. The regression suite separately checks native sidebar stacking order and stable width during reveal, hide, and reversal, and menu opacity throughout its opening animation.
-
-`python -B tests/native_tools.test.py` verifies that capture cleanup preserves a second running app, deliberately reintroduces the menu fade, and omits Ctrl+Shift+B input to prove both the guards and failure diagnostics. `powershell -NoProfile -File tests/version.test.ps1` builds two successive Windows resource versions without cleaning. Both checks also run in CI.
-
+Suggestion ranking can be compared against an earlier commit with `node tests/suggestions.bench.cjs --baseline <git-ref>`. It checks identical results before timing six workloads with 2,000 history entries; results are medians of seven alternating samples.
 
 ## Upstream Synchronization & Conflict Detection
 
@@ -231,13 +220,10 @@ replaces it and removes the old Installed apps entry.
 
 ### Verification and signing
 
-`package.ps1` verifies Windows icons/version resources, installs and uninstalls the built
-setup silently, and runs the release app
-headlessly against local fixtures using a temporary profile. The tests cover
-live tab form retention, native history, pop-ups, downloads, error/retry,
-address and palette drafts, second-launch link handoff, forced-exit recovery,
-and fallback from a corrupt session file. It then writes `target/release/SHA256SUMS`.
-The same verification runs in Windows CI, which retains the app, setup, and checksums.
+`package.ps1` builds the release app and installer, verifies Windows icons, version
+resources, and the GUI subsystem, installs, upgrades, and uninstalls the setup silently,
+then writes `target/release/SHA256SUMS`. Windows CI runs the same script and retains
+the app, setup, and checksums as the `Veluno-Windows` artifact.
 
 To sign with an existing certificate in your Windows user certificate store:
 
@@ -268,21 +254,6 @@ retries the address. Renderer failures preserve tab URLs for reload.
 Camera, microphone, location, notifications, and clipboard-read requests show
 an origin-labelled native prompt. Unknown permission types are denied. Standard
 file pickers and downloads use WebView2's native interfaces.
-
-For an isolated headless development check after `cargo build --locked`:
-
-```powershell
-python tests/native_smoke.py
-python tests/native_regressions.py
-```
-
-The regression suite also exercises 100, 300, and 500 saved tabs with lazy restore, a 12-view budget, protected drafts/media/pins/downloads, waking sleepers, and recovery after forced exit. It records startup and tab-switch timings and the process tree working set in `capacity.json`. These local fixtures do not establish a RAM guarantee for arbitrary websites.
-
-The regression suite requires Node 22+ and checks normalized addresses, SPA
-routes, Back after page failures, sleeping-tab replacement, and the production
-Close Other Tabs command while a download is running. It also exercises native
-keyboard input and the DOM fixture at desktop and minimum sizes. Both suites
-use isolated profiles and hidden windows.
 
 ### One-Line Install (PowerShell)
 
@@ -329,8 +300,9 @@ only `Cargo.toml`, `Cargo.lock`, and `version.json`, then push directly with
 `git push origin HEAD:main` and wait for Windows push CI. Releases use this direct
 path; a release PR is used only when explicitly requested.
 Publication checks the checkout against the current remote
-`main`, requires successful Windows CI for that exact SHA, verifies the release
-package, and pins the GitHub tag to the built SHA.
+`main`, requires successful Windows CI for that exact SHA, downloads the
+`Veluno-Windows` artifact that run built, verifies it against its `SHA256SUMS`,
+and pins the GitHub tag to that SHA. Nothing is rebuilt locally.
 An existing tag, dirty checkout, mismatched metadata, or failed GitHub publication
 stops the release. Discord runs only after GitHub succeeds, unless `--skip-github`
 was explicitly requested. `--dry-run` only validates and prints the plan.

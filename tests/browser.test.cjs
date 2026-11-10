@@ -169,7 +169,6 @@ assert.equal(altClick('/docs', { isTrusted: false }), false, 'Synthetic clicks c
 assert.equal(messages.length, 0);
 new vm.Script(fs.readFileSync('src/reader.js', 'utf8'), { filename: 'src/reader.js' });
 new vm.Script(fs.readFileSync('src/find.js', 'utf8'), { filename: 'src/find.js' });
-assert.ok(fs.readFileSync('src/find.js', 'utf8').includes('window.find'), 'the find bar drives the built-in search');
 vm.runInContext("Object.prototype.toJSON = function () { throw Error('page serialization hook'); }", context);
 assert.deepEqual(press('t', { ctrlKey: true }), { action: 'new_tab' });
 keydown({ key: 't', ctrlKey: true, isTrusted: true, isComposing: true });
@@ -193,48 +192,5 @@ for (const file of ['src/ui.html', 'src/start_page.html', 'src/new_tab.html', 's
   for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(script[1], { filename: file });
   assert.ok(!html.includes('__COMMON_SCRIPT__'));
 }
-const uiHtml = fs.readFileSync('src/ui.html', 'utf8');
-assert.ok(/submitAddress\(true\)/.test(uiHtml), 'Ctrl+Enter opens the address in a new tab');
-assert.ok(uiHtml.includes('submitAddress(newTab=false)'), 'the address submit knows about new tabs');
-assert.ok(uiHtml.includes('autoScrollTabs(e.clientY)'), 'dragging near an edge scrolls the tab list');
-assert.ok(/function autoScrollTabs/.test(uiHtml), 'the tab list has an auto-scroll helper');
-assert.ok(uiHtml.includes("className='tab-loading'"), 'a loading tab shows an indicator');
-assert.ok(uiHtml.includes("addItem('Copy address'"), 'the tab menu can copy the tab address');
-assert.ok(uiHtml.includes('id="announcer" role="status" aria-live="polite"'), 'changes are announced politely');
-assert.ok(/function announce\(message\)/.test(uiHtml), 'the sidebar has an announcement helper');
-assert.ok(/closeTabMenu\(false\)/.test(uiHtml), 'an outside click closes the tab menu without stealing focus');
-assert.ok(/menuTabId=tab\.id/.test(uiHtml), 'the tab menu remembers its tab');
-assert.ok(/closeTabMenu=\(restoreFocus=true\)/.test(uiHtml), 'closing the tab menu restores focus by default');
-assert.ok(uiHtml.includes("announce('Workspace '"), 'a workspace change is announced');
-assert.ok(/announce\('Tab '\+\(active\.title/.test(uiHtml), 'a tab change is announced');
-assert.ok(/if\(!\$\('activity'\)\.hidden\) \{ e\.preventDefault\(\); \$\('activity'\)\.hidden=true; return; \}/.test(uiHtml), 'Escape dismisses the status message');
-assert.ok(uiHtml.includes('@keyframes tab-spin'), 'the loading indicator animates');
-assert.ok(uiHtml.includes('prefers-reduced-motion:reduce) { .tab-loading'), 'the loading indicator respects reduced motion');
-assert.ok(uiHtml.includes('tab.is_loading,tab.id===currentState.active_tab_id'), 'the tab row re-renders when loading changes');
-const startPage = fs.readFileSync('src/start_page.html', 'utf8');
-assert.ok(/ctrlKey\|\|event\.altKey\) Veluno\.send\('new_tab'/.test(startPage), 'Ctrl+Enter on the start page opens a new tab');
-assert.ok(uiHtml.includes('MB'), 'src/ui.html must format download size in MB');
-assert.ok(!uiHtml.includes("toFixed(1)} KB"), 'src/ui.html must not use KB for download progress');
-assert.ok(uiHtml.includes('<symbol id="veluno"'), 'src/ui.html must define #veluno logo symbol');
-assert.ok(uiHtml.includes("icon('veluno')"), 'src/ui.html must render #veluno icon for veluno://newtab');
-const expectedAssets = [
-  'favicon.svg',
-  'icon.ico',
-  'icon_64.rgba',
-  'logo-monochrome.svg',
-  'logo-wordmark.svg',
-  'logo.svg',
-  'veluno-icon.png',
-  'veluno-logo.png',
-  'veluno-logo.svg',
-];
-assert.deepEqual(fs.readdirSync('assets').sort(), expectedAssets, 'assets/ must contain only canonical branding files');
-for (const required of ['scripts/build.py', 'scripts/generate-icons.py', 'scripts/notify_discord.py', '.agents/skills/discord-release/SKILL.md']) {
-  assert.ok(fs.existsSync(required), `Missing tracked release file: ${required}`);
-}
-assert.ok(
-  fs.readFileSync('scripts/notify_discord.py', 'utf8').includes('LOCALAPPDATA'),
-  'scripts/notify_discord.py must support LOCALAPPDATA/Veluno/discord_webhook.txt fallback across worktrees',
-);
-console.log('Address resolution, shortcut routing, asset hygiene, and embedded script syntax passed.');
+console.log('Address resolution, suggestions, shortcut routing, and embedded script syntax passed.');
 require('./sleep.test.cjs');

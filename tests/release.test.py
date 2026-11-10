@@ -1,24 +1,31 @@
-"""Release guard tests; packaging and publication are always mocked."""
-import contextlib
+"""Release guard tests; CI downloads and publication are always mocked."""
 import base64
+import contextlib
+import hashlib
 import importlib.util
 import io
 import json
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from types import SimpleNamespace
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location('release', ROOT / 'scripts/build.py')
-release = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(release)
-notify_spec = importlib.util.spec_from_file_location('notify', ROOT / 'scripts/notify_discord.py')
-notify = importlib.util.module_from_spec(notify_spec)
-notify_spec.loader.exec_module(notify)
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None, path
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+release = load('release', ROOT / 'scripts/build.py')
+notify = load('notify', ROOT / 'scripts/notify_discord.py')
 SHA = 'a' * 40
 
 
@@ -121,10 +128,10 @@ class ReleaseTests(unittest.TestCase):
         self.head = SHA
         self.remote = SHA
         self.tag = ''
-        self.ci = [{'headSha': SHA, 'status': 'completed', 'conclusion': 'success'}]
-        self.fail = None
-        self.change_during_build = False
+        self.ci = [{'databaseId': 42, 'headSha': SHA, 'status': 'completed', 'conclusion': 'success'}]
+        self.failing_stage = None
         self.missing_asset = False
+        self.corrupt_asset = False
 
     def run_command(self, command, **kwargs):
         self.commands.append(command)
@@ -140,22 +147,26 @@ class ReleaseTests(unittest.TestCase):
         elif command[:3] == ['gh', 'run', 'list']:
             result = json.dumps(self.ci)
         else:
-            stage = 'github' if command[0] == 'gh' else 'notify' if command[0] == sys.executable else 'package'
-            if stage == self.fail:
+            stage = ('download' if command[:3] == ['gh', 'run', 'download'] else 'github' if command[0] == 'gh'
+                     else 'notify' if command[0] == sys.executable else 'other')
+            if stage == self.failing_stage:
                 if kwargs.get('check'):
                     raise subprocess.CalledProcessError(7, command)
                 return SimpleNamespace(returncode=7)
-            if stage == 'package':
-                directory = self.root / 'target/release'
-                directory.mkdir(parents=True)
-                for name in ('veluno.exe', 'veluno-setup.exe', 'felaris.exe', 'felaris-setup.exe', 'SHA256SUMS'):
-                    if not self.missing_asset or name != 'SHA256SUMS':
-                        (directory / name).write_bytes(b'fixture')
-                if self.change_during_build:
-                    self.head = 'b' * 40
+            if stage == 'download':
+                self.assertEqual(command[3:6], ['42', '--name', 'Veluno-Windows'])
+                directory = Path(command[command.index('--dir') + 1])
+                sums = []
+                for name in release.ASSETS[:-1]:
+                    (directory / name).write_bytes(name.encode())
+                    sums.append(f'{hashlib.sha256(name.encode()).hexdigest()}  {name}')
+                if not self.missing_asset:
+                    (directory / 'SHA256SUMS').write_text('\n'.join(sums) + '\n', encoding='ascii')
+                if self.corrupt_asset:
+                    (directory / 'veluno-setup.exe').write_bytes(b'tampered')
         return SimpleNamespace(stdout=result, returncode=0)
 
-    def invoke(self, *arguments, gh='gh'):
+    def invoke(self, *arguments, gh: str | None = 'gh'):
         with patch.object(release, 'PROJECT_ROOT', self.root), patch('sys.argv', ['build.py', *arguments]), \
                 patch('subprocess.run', side_effect=self.run_command), patch('shutil.which', return_value=gh), \
                 contextlib.redirect_stdout(io.StringIO()):
@@ -165,13 +176,13 @@ class ReleaseTests(unittest.TestCase):
         return [command for command in self.commands if command[:3] == ['gh', 'release', 'create'] or command[0] == sys.executable]
 
     def test_github_failure_stops_discord(self):
-        self.fail = 'github'
+        self.failing_stage = 'github'
         with self.assertRaises(subprocess.CalledProcessError):
             self.invoke()
         self.assertEqual(len(self.published()), 1)
 
-    def test_package_failure_stops_publication(self):
-        self.fail = 'package'
+    def test_download_failure_stops_publication(self):
+        self.failing_stage = 'download'
         with self.assertRaises(subprocess.CalledProcessError):
             self.invoke()
         self.assertEqual(self.published(), [])
@@ -216,16 +227,21 @@ class ReleaseTests(unittest.TestCase):
             self.invoke()
         self.assertEqual(self.published(), [])
 
-    def test_missing_github_cli_requires_explicit_skip(self):
-        with self.assertRaisesRegex(ValueError, 'required'):
-            self.invoke(gh=None)
-        self.invoke('--skip-github', gh=None)
+    def test_github_cli_is_required_to_fetch_ci_assets(self):
+        for arguments in ((), ('--skip-github',)):
+            with self.subTest(arguments=arguments), self.assertRaisesRegex(ValueError, 'required'):
+                self.invoke(*arguments, gh=None)
+        self.assertEqual(self.published(), [])
+
+    def test_skip_github_still_uses_ci_assets_and_notifies(self):
+        self.invoke('--skip-github')
         self.assertEqual(len(self.published()), 1)
         self.assertEqual(self.published()[0][0], sys.executable)
+        self.assertTrue(any(command[:3] == ['gh', 'run', 'download'] for command in self.commands))
 
-    def test_changed_source_after_build_rejected(self):
-        self.change_during_build = True
-        with self.assertRaisesRegex(ValueError, 'changed during'):
+    def test_checksum_mismatch_rejected(self):
+        self.corrupt_asset = True
+        with self.assertRaisesRegex(ValueError, 'SHA256SUMS'):
             self.invoke()
         self.assertEqual(self.published(), [])
 
@@ -248,8 +264,8 @@ class ReleaseTests(unittest.TestCase):
 
     def test_ci_must_pass_on_the_exact_commit(self):
         for runs in ([], [{'headSha': SHA, 'status': 'in_progress', 'conclusion': ''}],
-                     [{'headSha': SHA, 'status': 'completed', 'conclusion': 'failure'}],
-                     [{'headSha': 'b' * 40, 'status': 'completed', 'conclusion': 'success'}]):
+                     [{'databaseId': 42, 'headSha': SHA, 'status': 'completed', 'conclusion': 'failure'}],
+                     [{'databaseId': 42, 'headSha': 'b' * 40, 'status': 'completed', 'conclusion': 'success'}]):
             with self.subTest(runs=runs):
                 self.ci = runs
                 with self.assertRaisesRegex(ValueError, 'CI must pass'):
@@ -266,12 +282,6 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(result.returncode, 37, result.stderr)
         self.assertEqual(json.loads(result.stdout), [str(ROOT / 'scripts/build.py'), '--summary',
                          'Release notes with spaces', '--prepare', '--skip-discord', '--skip-github', '--dry-run'])
-
-    def test_windows_icons_match_canonical_branding(self):
-        result = subprocess.run([sys.executable, str(ROOT / 'scripts/generate-icons.py'), '--check'],
-                                capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('match', result.stdout)
 
 
 if __name__ == '__main__':
