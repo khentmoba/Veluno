@@ -341,6 +341,24 @@ fn leave_content_fullscreen(
     }
 }
 
+/// Tracks the palette WebView's native visibility so `show` runs only on a change.
+/// The palette is built hidden, so it starts hidden; a `true` start would skip the first reveal.
+struct PaletteShown(bool);
+
+impl PaletteShown {
+    fn new() -> Self {
+        Self(false)
+    }
+
+    fn transition(&mut self, open: bool) -> Option<bool> {
+        if self.0 == open {
+            return None;
+        }
+        self.0 = open;
+        Some(open)
+    }
+}
+
 fn bounds(window: &Window, reveal: f64, dock: f64, top: f64) -> (Rect, Rect, Rect, Rect) {
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
     let full = ui::SIDEBAR_WIDTH_EXPANDED;
@@ -1453,7 +1471,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         )?,
     );
     let mut palette_open = false;
-    let mut palette_shown = true;
+    let mut palette_shown = PaletteShown::new();
     let mut palette_needs_open = false;
     let mut visible_id = None;
     let mut placed: HashMap<usize, Rect> = HashMap::new();
@@ -2463,9 +2481,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         }
         let _ = palette.set_bounds(overlay_bounds);
-        if palette_shown != palette_open {
-            desktop::show(&palette, palette_open);
-            palette_shown = palette_open;
+        if let Some(visible) = palette_shown.transition(palette_open) {
+            desktop::show(&palette, visible);
         }
         if palette_open {
             desktop::raise(&palette);
@@ -2502,6 +2519,16 @@ mod tests {
 
     fn action(key: u32, ctrl: bool, shift: bool, alt: bool) -> String {
         format!("{:?}", shortcut(key, ctrl, shift, alt))
+    }
+
+    #[test]
+    fn palette_reveals_on_first_open_after_launch() {
+        let mut shown = PaletteShown::new();
+        assert_eq!(shown.transition(true), Some(true));
+        assert_eq!(shown.transition(true), None);
+        assert_eq!(shown.transition(false), Some(false));
+        assert_eq!(shown.transition(false), None);
+        assert_eq!(shown.transition(true), Some(true));
     }
 
     #[test]
