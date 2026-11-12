@@ -54,8 +54,9 @@ For intermittent failures, retain the original failure log. A green rerun does
 not establish a cause.
 Report unresolved failures explicitly; do not replace assertions with delays.
 
-For visible UI changes, do not launch or drive the app to capture screenshots.
-Describe the visible change and mark screenshots not captured; the user may add them.
+For visible UI changes, check the behavior with a headless run of the app (see
+`AGENTS.md`), keeping the driver outside the repo. Describe what you observed. Mark
+screenshots not captured unless you took one; the user may add them.
 For tooling or documentation changes with no visible UI change, use execution
 evidence and mark screenshots not applicable. Exclude profiles and private data.
 
