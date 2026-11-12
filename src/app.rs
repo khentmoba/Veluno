@@ -1449,6 +1449,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     );
     let mut palette_open = false;
     let mut palette_shown = PaletteShown::new();
+    let mut palette_placed: Option<Rect> = None;
     let mut palette_needs_open = false;
     let mut visible_id = None;
     let mut placed: HashMap<usize, Rect> = HashMap::new();
@@ -2504,11 +2505,17 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         if downloads_shown && !palette_open {
             desktop::raise(&downloads_popup);
         }
-        let _ = palette.set_bounds(overlay_bounds);
         if let Some(visible) = palette_shown.transition(palette_open) {
             desktop::show(&palette, visible);
+            if visible {
+                palette_placed = None;
+            }
         }
         if palette_open {
+            if palette_placed != Some(overlay_bounds) {
+                let _ = palette.set_bounds(overlay_bounds);
+                palette_placed = Some(overlay_bounds);
+            }
             desktop::raise(&palette);
             desktop::raise(&sidebar);
         }
