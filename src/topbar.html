@@ -14,7 +14,7 @@ button { transition:background-color 160ms cubic-bezier(.2,0,0,1),color 160ms cu
 </style></head><body><div id="bar"></div>
 <div class="chrome"><div id="drag"></div>
 <button id="min" aria-label="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
-<button id="max" aria-label="Maximize or restore"><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg></button>
+<button id="max" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg></button>
 <button id="close" aria-label="Close"><svg viewBox="0 0 10 10"><path d="m0 0 10 10M10 0 0 10"/></svg></button></div>
 <script>
 const send=(action,payload={})=>window.ipc.postMessage(JSON.stringify({action,...payload}));
@@ -62,6 +62,16 @@ drag.addEventListener('mousedown',e=>{
  else send('drag_window');
 });
 drag.addEventListener('dblclick',()=>send('window_maximize'));
+const max=document.getElementById('max');
+const maxIcon=max.querySelector('svg');
+const svgShape=(tag,attrs)=>{const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[k,v]of Object.entries(attrs))el.setAttribute(k,v);return el;};
+window.setMaximized=on=>{
+ maxIcon.replaceChildren(...(on
+  ?[svgShape('path',{d:'M4.5 1.5h5v5h-3v-3h-2z'}),svgShape('path',{d:'M1.5 3.5h5v5h-5z'})]
+  :[svgShape('rect',{x:'.5',y:'.5',width:'9',height:'9'})]));
+ const label=on?'Restore':'Maximize';
+ max.setAttribute('aria-label',label); max.title=label;
+};
 document.getElementById('min').onclick=()=>send('window_minimize');
 document.getElementById('max').onclick=()=>send('window_maximize');
 document.getElementById('close').onclick=()=>send('window_close');

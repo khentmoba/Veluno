@@ -1427,6 +1427,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         headless,
     )?;
     let mut last_loading = false;
+    // The top bar's maximize/restore glyph, last pushed to its WebView. `None` forces a push after a reload.
+    let mut last_maximized: Option<bool> = None;
     let mut cursor_pos = (100., 100.);
     let mut popup_loading = false;
     let mut dock_progress = if state.sidebar_collapsed { 0. } else { 1. };
@@ -1751,7 +1753,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         if permission_prompt.respond(token, allow, &state) && !headless && let Some(view) = views.get(&state.active_tab_id) { let _ = view.focus(); }
                     },
                     UserEvent::Ready => { last_sidebar_state.clear(); },
-                    UserEvent::TopbarReady => { last_loading = false; },
+                    UserEvent::TopbarReady => { last_loading = false; last_maximized = None; },
                     UserEvent::PopupReady => {
                         if let Ok(url_json) = serde_json::to_string(&*popup_host.url.borrow()) {
                             let _ = popup_bar.evaluate_script(&format!("window.setPopupState?.({url_json},{popup_loading})"));
@@ -1877,7 +1879,13 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::Peek { open } => { state.sidebar_peek = open && state.sidebar_collapsed; },
                             Command::TopbarPeek { open } => { state.topbar_peek = open; },
                             Command::WindowMinimize => { window.set_minimized(true); },
-                            Command::WindowMaximize => { window.set_maximized(!window.is_maximized()); },
+                            Command::WindowMaximize => {
+                                if window.fullscreen().is_some() {
+                                    restore_window(&window, &mut maximize_after_fullscreen);
+                                } else {
+                                    window.set_maximized(!window.is_maximized());
+                                }
+                            },
                             Command::WindowClose => {},
                             Command::DragWindow => { let _ = window.drag_window(); },
                             Command::ResizeWindow { direction } => {
@@ -2262,6 +2270,12 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
             Event::LoopDestroyed => { history::flush(); let _ = session.flush(&state); return; },
             _ => return,
+        }
+        // The top bar's maximize/restore glyph follows the window, including borderless full screen.
+        let maximized = window.is_maximized() || window.fullscreen().is_some();
+        if last_maximized != Some(maximized) {
+            last_maximized = Some(maximized);
+            let _ = topbar.evaluate_script(&format!("window.setMaximized?.({maximized})"));
         }
         downloads = desktop::download_counts(&views);
         state.active_downloads = downloads.values().sum();
