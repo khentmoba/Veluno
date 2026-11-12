@@ -1,3 +1,6 @@
+use crate::layout::{
+    border_resize_direction, ease, parse_resize_direction, side_panel_bounds, split_bounds, step,
+};
 use crate::{
     desktop, extensions, history, instance::Instance, permission, profile, recovery,
     session::SessionWriter, settings, start_page, state::BrowserState, ui, updater,
@@ -13,7 +16,7 @@ use tao::{
     dpi::{LogicalPosition, LogicalSize, Position, Size},
     event::{ElementState, Event, MouseButton, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
-    window::{CursorIcon, Fullscreen, Icon, ResizeDirection, Window, WindowBuilder},
+    window::{CursorIcon, Fullscreen, Icon, Window, WindowBuilder},
 };
 use wry::{NewWindowResponse, PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder};
 
@@ -415,30 +418,6 @@ fn bounds(window: &Window, reveal: f64, dock: f64, top: f64) -> (Rect, Rect, Rec
     )
 }
 
-/// Takes the side web panel from the content edge away from the sidebar.
-fn side_panel_bounds(
-    content: Rect,
-    scale: f64,
-    sidebar_right: bool,
-    progress: f64,
-) -> (Rect, Rect) {
-    let position = content.position.to_logical::<f64>(scale);
-    let size = content.size.to_logical::<f64>(scale);
-    let width = ui::SIDE_PANEL_WIDTH.min(size.width * 0.45);
-    let offset = (width + ui::WINDOW_MARGIN) * progress;
-    let rest = (size.width - offset).max(10.);
-    let (panel_x, content_x) = if sidebar_right {
-        (position.x - width + width * progress, position.x + offset)
-    } else {
-        (position.x + size.width - width * progress, position.x)
-    };
-    let rect = |x: f64, width: f64| Rect {
-        position: Position::Logical(LogicalPosition::new(x, position.y)),
-        size: Size::Logical(LogicalSize::new(width, size.height)),
-    };
-    (rect(content_x, rest), rect(panel_x, width))
-}
-
 #[cfg(windows)]
 fn content_browser_arguments() -> String {
     let mut args = String::from(
@@ -477,12 +456,23 @@ pub(crate) fn chrome_browser_arguments() -> String {
     args
 }
 
+fn error_page_data_url() -> &'static str {
+    static URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    URL.get_or_init(|| {
+        use base64::Engine as _;
+        format!(
+            "data:text/html;charset=utf-8;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(include_str!("error.html"))
+        )
+    })
+}
+
 fn is_valid_navigation(url: &str) -> bool {
     profile::allowed_url(url)
         || url == "about:blank"
         || url == "about:srcdoc"
         || url.starts_with("blob:")
-        || url.starts_with("data:")
+        || url == error_page_data_url()
 }
 
 /// The docked side web panel. It shares the tab profile, so sign-ins carry over.
@@ -531,35 +521,6 @@ fn side_panel(
     Ok(view)
 }
 
-/// Splits the content area into two side-by-side panes with a window-margin gap.
-fn split_bounds(content: Rect, scale: f64) -> (Rect, Rect) {
-    let position = content.position.to_logical::<f64>(scale);
-    let size = content.size.to_logical::<f64>(scale);
-    let width = ((size.width - ui::WINDOW_MARGIN) / 2.).max(10.);
-    let pane = |x: f64| Rect {
-        position: Position::Logical(LogicalPosition::new(x, position.y)),
-        size: Size::Logical(LogicalSize::new(width, size.height)),
-    };
-    (
-        pane(position.x),
-        pane(position.x + width + ui::WINDOW_MARGIN),
-    )
-}
-
-fn step(progress: f64, target: f64, dt: f64) -> f64 {
-    let amount = dt / if target > progress { 0.30 } else { 0.22 };
-    if target > progress {
-        (progress + amount).min(target)
-    } else {
-        (progress - amount).max(target)
-    }
-}
-
-fn ease(progress: f64) -> f64 {
-    let p = progress.clamp(0., 1.);
-    p * p * p * (p * (p * 6. - 15.) + 10.)
-}
-
 #[derive(Clone)]
 struct PopupHost {
     main: Rc<Window>,
@@ -588,51 +549,6 @@ fn popup_bounds(window: &Window) -> (Rect, Rect) {
             )),
         },
     )
-}
-
-fn parse_resize_direction(direction: &str) -> Option<ResizeDirection> {
-    match direction {
-        "n" => Some(ResizeDirection::North),
-        "s" => Some(ResizeDirection::South),
-        "e" => Some(ResizeDirection::East),
-        "w" => Some(ResizeDirection::West),
-        "ne" => Some(ResizeDirection::NorthEast),
-        "nw" => Some(ResizeDirection::NorthWest),
-        "se" => Some(ResizeDirection::SouthEast),
-        "sw" => Some(ResizeDirection::SouthWest),
-        _ => None,
-    }
-}
-
-fn border_resize_direction(
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-) -> Option<(ResizeDirection, CursorIcon)> {
-    let border = ui::WINDOW_MARGIN;
-    let corner = 12.;
-    let left = x < border;
-    let right = x >= width - border;
-    let top = y < border;
-    let bottom = y >= height - border;
-    if !(left || right || top || bottom) {
-        return None;
-    }
-    let near_left = x < corner;
-    let near_right = x >= width - corner;
-    let near_top = y < corner;
-    let near_bottom = y >= height - corner;
-    Some(match (near_left, near_right, near_top, near_bottom) {
-        (true, _, true, _) => (ResizeDirection::NorthWest, CursorIcon::NwResize),
-        (_, true, true, _) => (ResizeDirection::NorthEast, CursorIcon::NeResize),
-        (true, _, _, true) => (ResizeDirection::SouthWest, CursorIcon::SwResize),
-        (_, true, _, true) => (ResizeDirection::SouthEast, CursorIcon::SeResize),
-        _ if left => (ResizeDirection::West, CursorIcon::WResize),
-        _ if right => (ResizeDirection::East, CursorIcon::EResize),
-        _ if top => (ResizeDirection::North, CursorIcon::NResize),
-        _ => (ResizeDirection::South, CursorIcon::SResize),
-    })
 }
 
 #[cfg(windows)]
@@ -2624,157 +2540,4 @@ pub fn run(args: &[String]) -> wry::Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn action(key: u32, ctrl: bool, shift: bool, alt: bool) -> String {
-        format!("{:?}", shortcut(key, ctrl, shift, alt))
-    }
-
-    #[test]
-    fn palette_reveals_on_first_open_after_launch() {
-        let mut shown = PaletteShown::new();
-        assert_eq!(shown.transition(true), Some(true));
-        assert_eq!(shown.transition(true), None);
-        assert_eq!(shown.transition(false), Some(false));
-        assert_eq!(shown.transition(false), None);
-        assert_eq!(shown.transition(true), Some(true));
-    }
-
-    #[test]
-    fn shortcuts_map_virtual_keys_and_leave_page_keys_alone() {
-        assert_eq!(
-            action(0x54, true, false, false),
-            "Some(NewTab { url: None })"
-        );
-        assert_eq!(action(0x54, true, true, false), "Some(RestoreClosedTab)");
-        assert_eq!(action(0x42, true, true, false), "Some(ToggleSidebar)");
-        assert_eq!(action(0x52, true, true, false), "Some(ReloadFresh)");
-        assert_eq!(action(0x74, true, false, false), "Some(ReloadFresh)");
-        assert_eq!(
-            action(0x09, true, true, false),
-            "Some(CycleTab { backwards: true })"
-        );
-        assert_eq!(action(0xBB, true, true, false), "Some(Zoom { delta: 10 })");
-        assert_eq!(
-            action(0x32, false, false, true),
-            "Some(SwitchProfile { index: 2 })"
-        );
-        assert_eq!(action(0x25, false, false, true), "Some(Back)");
-        assert_eq!(action(0x7A, false, false, false), "Some(ToggleFullscreen)");
-        assert_eq!(action(0x78, false, false, false), "Some(ToggleReader)");
-        assert_eq!(
-            action(0x2E, true, true, false),
-            "Some(OpenSettings { section: Some(\"privacy\") })"
-        );
-        // Save, find, copy, plain typing, and AltGr (Ctrl+Alt) belong to the page.
-        for (key, ctrl, shift, alt) in [
-            (0x53, true, false, false),
-            (0x46, true, false, false),
-            (0x43, true, false, false),
-            (0x54, false, false, false),
-            (0x54, true, false, true),
-            (0x2E, true, false, false),
-            (0x78, true, false, false),
-        ] {
-            assert_eq!(action(key, ctrl, shift, alt), "None");
-        }
-    }
-
-    #[test]
-    fn clear_browsing_data_requests_parse_and_ranges_are_fixed() {
-        let command: Command = serde_json::from_str(
-            r#"{"action":"clear_browsing_data","range":"day","kinds":{"history":true,"cache":true}}"#,
-        )
-        .unwrap();
-        let Command::ClearBrowsingData { range, kinds } = command else {
-            panic!("wrong command");
-        };
-        assert!(kinds.history && kinds.cache && !kinds.site_data && !kinds.passwords);
-        assert_eq!(
-            clear_range(&range),
-            Some((Some(86_400_000), "the last 24 hours"))
-        );
-        assert_eq!(clear_range("all"), Some((None, "all time")));
-        assert_eq!(clear_range("forever"), None);
-        let settings: Command = serde_json::from_str(r#"{"action":"open_settings"}"#).unwrap();
-        assert!(matches!(settings, Command::OpenSettings { section: None }));
-    }
-
-    #[test]
-    fn background_tabs_trim_once_per_hide_cycle() {
-        let now = std::time::Instant::now();
-        let old = now.checked_sub(MEMORY_TRIM_DELAY).unwrap();
-        let mut hidden_at =
-            HashMap::from([(1, (old, false)), (2, (old, false)), (3, (now, false))]);
-        assert_eq!(take_tabs_to_trim(&mut hidden_at, 1), vec![2]);
-        assert!(take_tabs_to_trim(&mut hidden_at, 1).is_empty());
-        hidden_at.remove(&2);
-        hidden_at.insert(2, (old, false));
-        assert_eq!(take_tabs_to_trim(&mut hidden_at, 1), vec![2]);
-    }
-
-    #[test]
-    fn animation_step_and_easing_progress_smoothly() {
-        assert_eq!(ease(0.), 0.);
-        assert_eq!(ease(1.), 1.);
-        assert_eq!(ease(0.5), 0.5);
-        assert!(ease(0.3) < 0.3);
-        assert!(ease(0.7) > 0.7);
-
-        let p1 = step(0., 1., 0.05);
-        assert!(p1 > 0. && p1 < 1.);
-        let p2 = step(p1, 1., 0.05);
-        assert!(p2 > p1 && p2 < 1.);
-
-        let r1 = step(1., 0., 0.05);
-        assert!(r1 < 1. && r1 > 0.);
-        let r2 = step(r1, 0., 0.05);
-        assert!(r2 < r1 && r2 > 0.);
-    }
-
-    #[test]
-    fn peek_to_dock_handoff_retains_reveal_without_wobble() {
-        let mut dock_progress = 0.0;
-        let mut reveal_progress = 1.0;
-
-        let dock_target: f64 = 1.0;
-        let peek_target: f64 = 0.0;
-        let reveal_target = dock_target.max(peek_target);
-
-        assert_eq!(reveal_target, 1.0);
-        for _ in 0..10 {
-            reveal_progress = step(reveal_progress, reveal_target, 0.016);
-            dock_progress = step(dock_progress, dock_target, 0.016);
-            assert_eq!(
-                reveal_progress, 1.0,
-                "Sidebar reveal must remain 1.0 during peek-to-dock handoff"
-            );
-            assert!(dock_progress > 0.0, "Dock progress should rise");
-        }
-    }
-
-    #[test]
-    fn side_panel_bounds_interpolate_with_progress() {
-        let content = Rect {
-            position: Position::Logical(LogicalPosition::new(0., 0.)),
-            size: Size::Logical(LogicalSize::new(1000., 800.)),
-        };
-        let (closed_content, closed_panel) = side_panel_bounds(content, 1.0, false, 0.0);
-        assert_eq!(closed_content.size.to_logical::<f64>(1.0).width, 1000.);
-        assert_eq!(closed_panel.position.to_logical::<f64>(1.0).x, 1000.);
-
-        let (half_content, _) = side_panel_bounds(content, 1.0, false, 0.5);
-        let (open_content, open_panel) = side_panel_bounds(content, 1.0, false, 1.0);
-        let open_width = open_panel.size.to_logical::<f64>(1.0).width;
-        assert!(half_content.size.to_logical::<f64>(1.0).width < 1000.);
-        assert!(
-            half_content.size.to_logical::<f64>(1.0).width
-                > open_content.size.to_logical::<f64>(1.0).width
-        );
-        assert_eq!(
-            open_content.size.to_logical::<f64>(1.0).width,
-            1000. - open_width - ui::WINDOW_MARGIN
-        );
-    }
-}
+mod tests;

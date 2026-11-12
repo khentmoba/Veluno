@@ -7,6 +7,7 @@ mod extensions;
 mod history;
 mod import;
 mod instance;
+mod layout;
 mod permission;
 mod profile;
 mod recovery;

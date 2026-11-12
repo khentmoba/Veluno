@@ -76,16 +76,11 @@ fn path() -> std::path::PathBuf {
 }
 
 pub fn get() -> Settings {
-    current()
-        .lock()
-        .expect("settings mutex should never be poisoned")
-        .clone()
+    crate::profile::lock(current()).clone()
 }
 
 pub fn engine() -> (&'static str, &'static str) {
-    let settings = current()
-        .lock()
-        .expect("settings mutex should never be poisoned");
+    let settings = crate::profile::lock(current());
     let (_, name, url) = ENGINES
         .iter()
         .find(|(key, ..)| *key == settings.search_engine)
@@ -95,16 +90,11 @@ pub fn engine() -> (&'static str, &'static str) {
 
 /// Whether the sidebar sits on the right edge of the window.
 pub fn sidebar_right() -> bool {
-    current()
-        .lock()
-        .expect("settings mutex should never be poisoned")
-        .sidebar_right
+    crate::profile::lock(current()).sidebar_right
 }
 
 pub fn accent() -> &'static str {
-    let settings = current()
-        .lock()
-        .expect("settings mutex should never be poisoned");
+    let settings = crate::profile::lock(current());
     ACCENTS
         .iter()
         .find(|(key, ..)| *key == settings.accent)
@@ -113,19 +103,12 @@ pub fn accent() -> &'static str {
 }
 
 pub fn data_saver() -> bool {
-    std::env::var_os("VELUNO_DATA_SAVER").is_some()
-        || current()
-            .lock()
-            .expect("settings mutex should never be poisoned")
-            .data_saver
+    std::env::var_os("VELUNO_DATA_SAVER").is_some() || crate::profile::lock(current()).data_saver
 }
 
 pub fn performance_mode() -> bool {
     std::env::var_os("VELUNO_PERFORMANCE_MODE").is_some()
-        || current()
-            .lock()
-            .expect("settings mutex should never be poisoned")
-            .performance_mode
+        || crate::profile::lock(current()).performance_mode
         || is_low_end_device()
 }
 
@@ -176,10 +159,7 @@ pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
         _ => return Err(format!("Unknown setting: {key}")),
     }
     save(&settings)?;
-    current()
-        .lock()
-        .expect("settings mutex should never be poisoned")
-        .clone_from(&settings);
+    crate::profile::lock(current()).clone_from(&settings);
     Ok(settings)
 }
 
@@ -196,10 +176,7 @@ pub fn reset() -> Result<Settings, String> {
 fn reset_with(write: impl FnOnce(&Settings) -> Result<(), String>) -> Result<Settings, String> {
     let defaults = Settings::default();
     write(&defaults)?;
-    current()
-        .lock()
-        .expect("settings mutex should never be poisoned")
-        .clone_from(&defaults);
+    crate::profile::lock(current()).clone_from(&defaults);
     Ok(defaults)
 }
 
