@@ -194,7 +194,7 @@
       else if (key === 'l' && !event.shiftKey) action = 'focus_address';
       else if (key === 'f' && event.shiftKey) action = 'focus_tab_search';
       else if (key === 'f' && !event.shiftKey) action = 'find_in_page';
-      else if (key === 'j' && !event.shiftKey) action = 'open_downloads';
+      else if (key === 'j' && !event.shiftKey) action = 'toggle_downloads';
       else if (key === 'h' && !event.shiftKey) action = 'open_history';
       else if (key === 'r') action = event.shiftKey ? 'reload_fresh' : 'reload';
       else if (key === 'f5') action = 'reload_fresh';

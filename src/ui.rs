@@ -12,6 +12,9 @@ pub const TOPBAR_HOT_ZONE: f64 = 4.0;
 pub const TOPBAR_EXPANDED: f64 = 34.0;
 pub const POPUP_BAR_HEIGHT: f64 = 42.0;
 pub const SIDE_PANEL_WIDTH: f64 = 380.0;
+pub const DOWNLOADS_POPUP_WIDTH: f64 = 340.0;
+/// Room around the Downloads card for its shadow. Pages in downloads.html use the same padding.
+pub const DOWNLOADS_POPUP_PAD: f64 = 12.0;
 
 /// The shared page script, using the search engine chosen in Settings.
 pub fn script() -> String {
@@ -105,6 +108,10 @@ pub fn get_settings_html() -> String {
     themed(include_str!("settings.html"))
         .replace("__COMMON_SCRIPT__", &script())
         .replace("__SETTINGS__", &data.to_string().replace('<', "\\u003c"))
+}
+
+pub fn get_downloads_html() -> String {
+    themed(include_str!("downloads.html")).replace("__COMMON_SCRIPT__", &script())
 }
 
 pub fn get_topbar_html() -> String {

@@ -157,7 +157,9 @@ pub enum Command {
     RevealDownload {
         id: usize,
     },
-    OpenDownloads,
+    DownloadsSize {
+        height: f64,
+    },
     DefaultBrowser,
     OpenSettings {
         section: Option<String>,
@@ -217,7 +219,7 @@ pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command>
             (Some('N'), _, true) => Command::NewPrivateTab,
             (Some('W'), _, false) => Command::CloseActiveTab,
             (Some('L'), _, false) => Command::FocusAddress,
-            (Some('J'), _, false) => Command::OpenDownloads,
+            (Some('J'), _, false) => Command::ToggleDownloads,
             (Some('H'), _, false) => Command::OpenHistory,
             (Some('R'), _, false) => Command::Reload,
             (Some('R'), _, true) | (_, 0x74, _) => Command::ReloadFresh,
@@ -276,6 +278,7 @@ pub enum UserEvent {
     Command(Command),
     Ready,
     PaletteReady,
+    DownloadsReady,
     TopbarReady,
     PopupReady,
     PopupTitle(String),
@@ -937,7 +940,6 @@ fn content(
                             | Command::SleepInactiveTabs
                             | Command::CycleTab { .. }
                             | Command::SwitchProfile { .. }
-                            | Command::OpenDownloads
                             | Command::ToggleDownloads
                             | Command::OpenHistory
                             | Command::Zoom { .. }
@@ -1187,7 +1189,14 @@ fn build_chrome_views(
     chrome_context: &mut WebContext,
     proxy: &EventLoopProxy<UserEvent>,
     headless: bool,
-) -> wry::Result<(WebView, WebView, permission::Prompt, WebView, WebView)> {
+) -> wry::Result<(
+    WebView,
+    WebView,
+    permission::Prompt,
+    WebView,
+    WebView,
+    WebView,
+)> {
     let ui_proxy = proxy.clone();
     let ready = proxy.clone();
     let initial_dock = if state.sidebar_collapsed { 0. } else { 1. };
@@ -1319,7 +1328,41 @@ fn build_chrome_views(
             .with_environment(environment.clone());
     }
     let popup_bar = popup_bar_builder.build_as_child(popup_window)?;
-    Ok((sidebar, palette, permission_prompt, topbar, popup_bar))
+    let downloads_proxy = proxy.clone();
+    let downloads_ready = proxy.clone();
+    let mut downloads_builder = WebViewBuilder::new_with_web_context(chrome_context)
+        .with_bounds(initial_bounds.2)
+        .with_visible(false)
+        .with_focused(false)
+        .with_transparent(true)
+        .with_background_color((0, 0, 0, 0))
+        .with_html(ui::get_downloads_html())
+        .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:text/html;"))
+        .with_on_page_load_handler(move |event, _| {
+            if matches!(event, PageLoadEvent::Finished) {
+                let _ = downloads_ready.send_event(UserEvent::DownloadsReady);
+            }
+        })
+        .with_ipc_handler(move |request| {
+            if let Ok(command) = serde_json::from_str::<Command>(request.body()) {
+                let _ = downloads_proxy.send_event(UserEvent::Command(command));
+            }
+        });
+    #[cfg(windows)]
+    {
+        use wry::WebViewBuilderExtWindows;
+        downloads_builder =
+            downloads_builder.with_additional_browser_args(chrome_browser_arguments());
+    }
+    let downloads_popup = downloads_builder.build_as_child(window)?;
+    Ok((
+        sidebar,
+        palette,
+        permission_prompt,
+        topbar,
+        popup_bar,
+        downloads_popup,
+    ))
 }
 
 fn start_ad_blocker_install(proxy: &EventLoopProxy<UserEvent>) {
@@ -1433,14 +1476,15 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     }
     let mut context = WebContext::new(Some(directory.join("WebView2")));
     let mut chrome_context = WebContext::new(Some(directory.join("Chrome")));
-    let (sidebar, palette, mut permission_prompt, topbar, popup_bar) = build_chrome_views(
-        &window,
-        &popup_window,
-        &state,
-        &mut chrome_context,
-        &proxy,
-        headless,
-    )?;
+    let (sidebar, palette, mut permission_prompt, topbar, popup_bar, downloads_popup) =
+        build_chrome_views(
+            &window,
+            &popup_window,
+            &state,
+            &mut chrome_context,
+            &proxy,
+            headless,
+        )?;
     let mut last_loading = false;
     // The top bar's maximize/restore glyph, last pushed to its WebView. `None` forces a push after a reload.
     let mut last_maximized: Option<bool> = None;
@@ -1497,6 +1541,13 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut panel_shown = false;
     let mut shown: Vec<usize> = Vec::new();
     let mut last_sidebar_state = String::new();
+    let mut last_downloads_state = String::new();
+    let mut last_dock: Option<f64> = None;
+    let mut downloads_progress = 0.;
+    let mut downloads_pushed: Option<f64> = None;
+    let mut downloads_placed: Option<Rect> = None;
+    let mut downloads_shown = false;
+    let mut downloads_height = 0.;
     let mut sleep_pending = HashSet::new();
     let mut recovery = recovery::Recovery::default();
     let mut hidden_at: HashMap<usize, (std::time::Instant, bool)> = HashMap::new();
@@ -1767,7 +1818,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                     UserEvent::PermissionResponse(token, allow) => {
                         if permission_prompt.respond(token, allow, &state) && !headless && let Some(view) = views.get(&state.active_tab_id) { let _ = view.focus(); }
                     },
-                    UserEvent::Ready => { last_sidebar_state.clear(); },
+                    UserEvent::Ready => { last_sidebar_state.clear(); last_dock = None; },
                     UserEvent::TopbarReady => { last_loading = false; last_maximized = None; },
                     UserEvent::PopupReady => {
                         if let Ok(url_json) = serde_json::to_string(&*popup_host.url.borrow()) {
@@ -1810,6 +1861,10 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         session_dirty = true;
                     },
                     UserEvent::PaletteReady => { palette_needs_open = palette_open; },
+                    UserEvent::DownloadsReady => {
+                        last_downloads_state.clear();
+                        downloads_pushed = None;
+                    },
                     UserEvent::External(urls) => {
                         if !headless { window.set_minimized(false); window.set_focus(); }
                         for url in urls { if profile::allowed_url(&url) { state.add_tab(Some(url), false); } }
@@ -2007,27 +2062,11 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             },
                             Command::CancelDownload { id } => { if let Err(error) = desktop::cancel_download(id) { state.update_status = Some(error); } },
                             Command::CloseDownloads => { state.downloads_open = false; },
-                            Command::ToggleDownloads => {
-                                if state.downloads_open {
-                                    state.downloads_open = false;
-                                } else {
-                                    state.sidebar_collapsed = false;
-                                    state.downloads_open = true;
-                                    let id = downloads.iter().find(|(_, count)| **count > 0).map(|(id,_)| *id)
-                                        .or(last_download_host.filter(|id| views.contains_key(id))).unwrap_or(state.active_tab_id);
-                                    if let Some(view) = views.get(&id) && let Err(error) = desktop::downloads(view) { state.update_status = Some(error); }
-                                }
-                            },
+                            Command::ToggleDownloads => { state.downloads_open = !state.downloads_open; },
                             Command::ClearDownloads => { desktop::clear_downloads(); },
+                            Command::DownloadsSize { height } => { downloads_height = height.clamp(0., 600.); },
                             Command::OpenDownload { id } => { if let Err(error) = desktop::open_download(id) { state.update_status = Some(error); } },
                             Command::RevealDownload { id } => { if let Err(error) = desktop::reveal_download(id) { state.update_status = Some(error); } },
-                            Command::OpenDownloads => {
-                                state.sidebar_collapsed = false;
-                                state.downloads_open = true;
-                                let id = downloads.iter().find(|(_, count)| **count > 0).map(|(id,_)| *id)
-                                    .or(last_download_host.filter(|id| views.contains_key(id))).unwrap_or(state.active_tab_id);
-                                if let Some(view) = views.get(&id) && let Err(error) = desktop::downloads(view) { state.update_status = Some(error); }
-                            },
                             Command::OpenSettings { section } => {
                                 let live = state.tabs.iter().find(|tab| tab.url == "veluno://settings").and_then(|tab| views.get(&tab.id));
                                 if let Some(section) = section.filter(|section| ui::SETTINGS_SECTIONS.contains(&section.as_str())) {
@@ -2051,7 +2090,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 Ok(current) => {
                                     if key == "accent" {
                                         let script = ui::accent_script();
-                                        for view in [&sidebar, &palette, &topbar, &popup_bar] { let _ = view.evaluate_script(&script); }
+                                        for view in [&sidebar, &palette, &topbar, &popup_bar, &downloads_popup] { let _ = view.evaluate_script(&script); }
                                         for tab in state.tabs.iter().filter(|tab| profile::is_internal(&tab.url)) {
                                             if let Some(view) = views.get(&tab.id) { let _ = view.evaluate_script(&script); }
                                         }
@@ -2076,7 +2115,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::ResetSettings => match settings::reset() {
                                 Ok(current) => {
                                     let script = ui::accent_script();
-                                    for view in [&sidebar, &palette, &topbar, &popup_bar] { let _ = view.evaluate_script(&script); }
+                                    for view in [&sidebar, &palette, &topbar, &popup_bar, &downloads_popup] { let _ = view.evaluate_script(&script); }
                                     for tab in state.tabs.iter().filter(|tab| profile::is_internal(&tab.url)) {
                                         if let Some(view) = views.get(&tab.id) { let _ = view.evaluate_script(&script); }
                                     }
@@ -2201,7 +2240,6 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                     UserEvent::DownloadsChanged => {},
                     UserEvent::DownloadStarted(id, generation, blank, document) => {
                         state.downloads_open = true;
-                        state.sidebar_collapsed = false;
                         if state.tabs.iter().any(|tab| tab.id == id && tab.generation == generation) {
                             last_download_host = Some(id);
                             if blank && state.discard_download_tab(id) {
@@ -2361,15 +2399,18 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         } else {
             0.
         };
+        let downloads_target = if state.downloads_open && content_fullscreen.is_none() { 1. } else { 0. };
         reveal_progress = step(reveal_progress, reveal_target, dt);
         dock_progress = step(dock_progress, dock_target, dt);
         top_progress = step(top_progress, top_target, dt);
         panel_progress = step(panel_progress, panel_target, dt);
+        downloads_progress = step(downloads_progress, downloads_target, dt);
         let was_animating = animating;
         animating = reveal_progress != reveal_target
             || dock_progress != dock_target
             || top_progress != top_target
-            || panel_progress != panel_target;
+            || panel_progress != panel_target
+            || downloads_progress != downloads_target;
         if animating != was_animating {
             animating_flag.store(animating, std::sync::atomic::Ordering::Relaxed);
             if animating {
@@ -2498,6 +2539,41 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         }
         let _ = topbar.set_bounds(topbar_bounds);
+        let dock_value = ease(dock_progress);
+        if last_dock != Some(dock_value)
+            && sidebar.evaluate_script(&format!("window.setDock?.({dock_value})")).is_ok()
+        {
+            last_dock = Some(dock_value);
+        }
+        let downloads_value = ease(downloads_progress);
+        if downloads_pushed != Some(downloads_value)
+            && downloads_popup
+                .evaluate_script(&format!("window.setDownloadsProgress?.({downloads_value})"))
+                .is_ok()
+        {
+            downloads_pushed = Some(downloads_value);
+        }
+        let downloads_visible = downloads_progress > 0.;
+        if downloads_visible {
+            let downloads_rect = Rect {
+                position: Position::Logical(LogicalPosition::new(0., ui::TOPBAR_EXPANDED)),
+                size: Size::Logical(LogicalSize::new(
+                    ui::DOWNLOADS_POPUP_WIDTH + 2. * ui::DOWNLOADS_POPUP_PAD,
+                    downloads_height + 2. * ui::DOWNLOADS_POPUP_PAD,
+                )),
+            };
+            if downloads_placed != Some(downloads_rect) {
+                let _ = downloads_popup.set_bounds(downloads_rect);
+                downloads_placed = Some(downloads_rect);
+            }
+        }
+        if downloads_visible != downloads_shown {
+            desktop::show(&downloads_popup, downloads_visible);
+            if downloads_visible && !palette_open {
+                desktop::raise(&downloads_popup);
+            }
+            downloads_shown = downloads_visible;
+        }
         if tick {
             return;
         }
@@ -2508,6 +2584,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             } else {
                 desktop::raise(&topbar);
             }
+        }
+        if downloads_shown && !palette_open {
+            desktop::raise(&downloads_popup);
         }
         let _ = palette.set_bounds(overlay_bounds);
         if let Some(visible) = palette_shown.transition(palette_open) {
@@ -2530,6 +2609,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         }
         if let Ok(json) = serde_json::to_string(&state) {
             if json != last_sidebar_state && sidebar.evaluate_script(&format!("window.updateState?.({json})")).is_ok() { last_sidebar_state.clone_from(&json); }
+            let downloads_json = serde_json::json!({ "items": state.download_items }).to_string();
+            if downloads_json != last_downloads_state && downloads_popup.evaluate_script(&format!("window.updateDownloads?.({downloads_json})")).is_ok() { last_downloads_state.clone_from(&downloads_json); }
             if focus_address { if !headless { let _ = sidebar.focus(); } let _ = sidebar.evaluate_script("window.focusAddress()"); focus_address = false; }
             if palette_open && palette_needs_open {
                 let history_json = serde_json::to_string(&history::all()).unwrap_or_else(|_| "[]".into());
