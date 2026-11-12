@@ -49,6 +49,8 @@ let current=null;
 const block=document.getElementById('block');
 const allow=document.getElementById('allow');
 const close=document.getElementById('close');
+const prompt=document.querySelector('.prompt');
+const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
 window.showPermission=request=>{
  const entry=content[request.kind];
  if(!entry) return;
@@ -58,6 +60,12 @@ window.showPermission=request=>{
  document.getElementById('description').textContent=entry[1];
  document.getElementById('permission-icon').setAttribute('d',entry[2]);
  block.disabled=allow.disabled=close.disabled=false;
+ if(!reducedMotion.matches) {
+  document.body.getAnimations().forEach(a=>a.cancel());
+  prompt.getAnimations().forEach(a=>a.cancel());
+  document.body.animate([{backgroundColor:'rgb(0 0 0 / 0)'},{backgroundColor:'rgb(0 0 0 / .42)'}],{duration:180,easing:'cubic-bezier(.2,0,0,1)'});
+  prompt.animate([{opacity:0,transform:'translateY(-10px) scale(.98)'},{opacity:1,transform:'translateY(0) scale(1)'}],{duration:220,easing:'cubic-bezier(.16,1,.3,1)'});
+ }
  block.focus();
 };
 function respond(granted) {
