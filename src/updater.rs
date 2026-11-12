@@ -390,6 +390,7 @@ Write-Output ([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($subject)
     let output = hidden_command(system_binary(
         "System32\\WindowsPowerShell\\v1.0\\powershell.exe",
     ))
+    .env_remove("PSModulePath")
     .env("VELUNO_SIGNED_FILE", file)
     .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
     .output()
