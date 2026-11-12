@@ -59,7 +59,50 @@ jobs:
           if (-not $found -and -not (Test-Path $iscc)) {
             choco install innosetup -y --no-progress
           }
-      - name: Build, verify, and install-test the package
+      - name: Import code-signing certificate
+        id: signing
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          CODE_SIGNING_PFX: ${{ secrets.CODE_SIGNING_PFX }}
+          CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
+        run: |
+          if (-not $env:CODE_SIGNING_PFX) {
+            Write-Host 'No signing certificate configured; building unsigned.'
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'code-signing.pfx'
+          $bytes = [Convert]::FromBase64String($env:CODE_SIGNING_PFX)
+          [IO.File]::WriteAllBytes($pfx, $bytes)
+          try {
+            $importArgs = @{
+              FilePath = $pfx
+              CertStoreLocation = 'Cert:\CurrentUser\My'
+            }
+            if ($env:CODE_SIGNING_PASSWORD) {
+              $importArgs.Password = ConvertTo-SecureString `
+                $env:CODE_SIGNING_PASSWORD -AsPlainText -Force
+            }
+            $certificate = Import-PfxCertificate @importArgs |
+              Where-Object { $_.HasPrivateKey } | Select-Object -First 1
+          } finally {
+            Remove-Item -LiteralPath $pfx -Force
+          }
+          if (-not $certificate) {
+            throw 'The code-signing PFX has no private-key certificate'
+          }
+          $line = "thumbprint=$($certificate.Thumbprint)"
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value $line
+      - name: Build, verify, and install-test the signed package
+        if: steps.signing.outputs.thumbprint != ''
+        env:
+          SIGNING_THUMBPRINT: ${{ steps.signing.outputs.thumbprint }}
+        run: >-
+          powershell -NoProfile -File scripts/package.ps1
+          -CertificateThumbprint "$env:SIGNING_THUMBPRINT"
+          -TimestampServer http://timestamp.digicert.com
+      - name: Build, verify, and install-test the unsigned package
+        if: steps.signing.outputs.thumbprint == ''
         run: powershell -NoProfile -File scripts/package.ps1
       - uses: actions/upload-artifact@v4
         with:

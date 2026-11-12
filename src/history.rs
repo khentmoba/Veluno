@@ -21,7 +21,7 @@ static DIRTY: AtomicBool = AtomicBool::new(false);
 static LOG: OnceLock<Mutex<Vec<Entry>>> = OnceLock::new();
 
 fn log() -> MutexGuard<'static, Vec<Entry>> {
-    LOG.get_or_init(|| {
+    profile::lock(LOG.get_or_init(|| {
         let mut loaded: Vec<Entry> = std::fs::read_to_string(path())
             .ok()
             .and_then(|json| serde_json::from_str(&json).ok())
@@ -29,9 +29,7 @@ fn log() -> MutexGuard<'static, Vec<Entry>> {
         // A file from a newer build or an older cap must not grow memory without bound.
         loaded.truncate(MAX_ENTRIES);
         Mutex::new(loaded)
-    })
-    .lock()
-    .expect("history mutex should never be poisoned")
+    }))
 }
 
 fn path() -> std::path::PathBuf {
@@ -53,9 +51,7 @@ pub fn flush() {
 
 fn flush_with(write: impl FnOnce(&[u8]) -> std::io::Result<()>) {
     static WRITING: Mutex<()> = Mutex::new(());
-    let _writing = WRITING
-        .lock()
-        .expect("history flush mutex should never be poisoned");
+    let _writing = profile::lock(&WRITING);
     if !DIRTY.swap(false, Ordering::AcqRel) {
         return;
     }

@@ -26,15 +26,19 @@ struct Request {
     proxy: EventLoopProxy<UserEvent>,
 }
 
+fn request_is_current(state: &BrowserState, tab: usize, generation: u64, origin: &str) -> bool {
+    state.active_tab().is_some_and(|active| {
+        active.id == tab
+            && active.generation == generation
+            && active.error.is_none()
+            && url::Url::parse(active.pending_url.as_ref().unwrap_or(&active.url))
+                .is_ok_and(|url| url.origin().ascii_serialization() == origin)
+    })
+}
+
 impl Request {
     fn current(&self, state: &BrowserState) -> bool {
-        state.active_tab().is_some_and(|tab| {
-            tab.id == self.tab
-                && tab.generation == self.generation
-                && tab.error.is_none()
-                && url::Url::parse(tab.pending_url.as_ref().unwrap_or(&tab.url))
-                    .is_ok_and(|url| url.origin().ascii_serialization() == self.origin)
-        })
+        request_is_current(state, self.tab, self.generation, &self.origin)
     }
 
     fn finish(&mut self, allow: bool, save: bool) {
@@ -241,5 +245,56 @@ impl Prompt {
             }
             self.visible = visible;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn permission_requests_follow_only_the_live_tab_and_origin() {
+        let mut state = BrowserState::new();
+        state.tabs[0].url = "https://example.com/page".into();
+        let (tab, generation) = (state.tabs[0].id, state.tabs[0].generation);
+        assert!(request_is_current(
+            &state,
+            tab,
+            generation,
+            "https://example.com"
+        ));
+        assert!(!request_is_current(
+            &state,
+            tab,
+            generation,
+            "https://evil.example"
+        ));
+        assert!(!request_is_current(
+            &state,
+            tab,
+            generation + 1,
+            "https://example.com"
+        ));
+        assert!(!request_is_current(
+            &state,
+            tab + 1,
+            generation,
+            "https://example.com"
+        ));
+        state.tabs[0].error = Some("failed".into());
+        assert!(!request_is_current(
+            &state,
+            tab,
+            generation,
+            "https://example.com"
+        ));
+        state.tabs[0].error = None;
+        state.tabs[0].pending_url = Some("https://other.example/".into());
+        assert!(!request_is_current(
+            &state,
+            tab,
+            generation,
+            "https://example.com"
+        ));
     }
 }

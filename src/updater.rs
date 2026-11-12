@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::process::Command;
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -199,6 +200,10 @@ pub fn download_and_apply_update(download_url: &str) -> Result<(), String> {
         let _ = std::fs::remove_file(&file);
         return Err(error);
     }
+    if let Err(error) = verify_publisher(&current_exe, &file) {
+        let _ = std::fs::remove_file(&file);
+        return Err(error);
+    }
 
     if installed {
         let mut command = Command::new(&file);
@@ -299,21 +304,12 @@ fn verify_download(
 }
 
 pub(crate) fn sha256(file: &std::path::Path) -> Result<String, String> {
-    let output = hidden_command(system_binary("System32\\certutil.exe"))
-        .args([
-            "-hashfile",
-            file.to_str().ok_or("Invalid temp path")?,
-            "SHA256",
-        ])
-        .output()
+    let mut reader =
+        std::fs::File::open(file).map_err(|e| format!("Could not verify the download: {e}"))?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut reader, &mut hasher)
         .map_err(|e| format!("Could not verify the download: {e}"))?;
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .nth(1)
-        .unwrap_or("")
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect())
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn checksum_for(sums: &str, asset: &str) -> Option<String> {
@@ -321,6 +317,116 @@ fn checksum_for(sums: &str, asset: &str) -> Option<String> {
         let (hash, name) = line.split_once("  ")?;
         (name.trim() == asset).then(|| hash.trim().to_string())
     })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Signer {
+    Unsigned,
+    Valid(String),
+    Broken,
+}
+
+fn pe_bytes_have_no_certificate_table(bytes: &[u8]) -> Option<bool> {
+    if bytes.len() < 64 || &bytes[..2] != b"MZ" {
+        return None;
+    }
+    let pe = u32::from_le_bytes(bytes[60..64].try_into().ok()?) as usize;
+    if bytes.get(pe..pe.checked_add(4)?)? != b"PE\0\0" {
+        return None;
+    }
+    let opt = pe.checked_add(24)?;
+    let magic = u16::from_le_bytes(bytes.get(opt..opt.checked_add(2)?)?.try_into().ok()?);
+    let (rva_count_offset, data_dir_offset) = match magic {
+        0x10b => (92usize, 96usize),
+        0x20b => (108usize, 112usize),
+        _ => return None,
+    };
+    let count_pos = opt.checked_add(rva_count_offset)?;
+    let rva_count = u32::from_le_bytes(
+        bytes
+            .get(count_pos..count_pos.checked_add(4)?)?
+            .try_into()
+            .ok()?,
+    );
+    if rva_count <= 4 {
+        return Some(true);
+    }
+    let security_pos = opt.checked_add(data_dir_offset)?.checked_add(32)?;
+    let entry = bytes.get(security_pos..security_pos.checked_add(8)?)?;
+    Some(entry == [0; 8])
+}
+
+fn pe_has_no_certificate_table(file: &std::path::Path) -> bool {
+    use std::io::Read as _;
+    let Ok(mut reader) = std::fs::File::open(file) else {
+        return false;
+    };
+    let mut header = [0u8; 4096];
+    let Ok(read) = reader.read(&mut header) else {
+        return false;
+    };
+    pe_bytes_have_no_certificate_table(&header[..read]).unwrap_or(false)
+}
+
+fn signer(file: &std::path::Path) -> Result<Signer, String> {
+    if pe_has_no_certificate_table(file) {
+        return Ok(Signer::Unsigned);
+    }
+    use base64::Engine as _;
+    const SCRIPT: &str = r#"
+$signature = Get-AuthenticodeSignature -LiteralPath $env:VELUNO_SIGNED_FILE
+$subject = ''
+if ($signature.SignerCertificate) { $subject = $signature.SignerCertificate.Subject }
+[Console]::Out.Write($signature.Status.ToString() + "`n" + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($subject)))
+"#;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(
+        SCRIPT
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<u8>>(),
+    );
+    let output = hidden_command(system_binary(
+        "System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    ))
+    .env("VELUNO_SIGNED_FILE", file)
+    .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
+    .output()
+    .map_err(|error| format!("Could not verify the update's signature: {error}"))?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut lines = text.lines();
+    let status = lines.next().unwrap_or_default().trim();
+    let subject = lines.next().unwrap_or_default().trim();
+    match status {
+        "" => Err("Could not verify the update's signature.".into()),
+        "NotSigned" => Ok(Signer::Unsigned),
+        "Valid" => {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(subject)
+                .map_err(|_| "Could not verify the update's signature.".to_string())?;
+            Ok(Signer::Valid(String::from_utf8_lossy(&bytes).into_owned()))
+        }
+        _ => Ok(Signer::Broken),
+    }
+}
+
+/// Pins an update to the publisher of a validly signed running build. Unsigned builds accept
+/// unsigned or validly signed updates. A running build with a broken signature accepts nothing.
+fn signer_allows_update(running: &Signer, update: &Signer) -> bool {
+    match (running, update) {
+        (Signer::Broken, _) => false,
+        (Signer::Valid(installed), Signer::Valid(new)) => installed == new,
+        (Signer::Valid(_), _) => false,
+        (Signer::Unsigned, Signer::Unsigned | Signer::Valid(_)) => true,
+        (Signer::Unsigned, Signer::Broken) => false,
+    }
+}
+
+fn verify_publisher(current_exe: &std::path::Path, update: &std::path::Path) -> Result<(), String> {
+    if signer_allows_update(&signer(current_exe)?, &signer(update)?) {
+        Ok(())
+    } else {
+        Err("The update's signature could not be trusted. Your current version was kept.".into())
+    }
 }
 
 fn replace_and_launch(
@@ -478,7 +584,7 @@ mod tests {
     fn system_tools_resolve_to_windows_binaries() {
         for tool in [
             "System32\\curl.exe",
-            "System32\\certutil.exe",
+            "System32\\WindowsPowerShell\\v1.0\\powershell.exe",
             "System32\\tar.exe",
             "explorer.exe",
         ] {
@@ -487,15 +593,15 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
-    fn sha256_matches_the_known_digest_through_certutil() {
+    fn sha256_matches_the_known_digest() {
         let file = std::env::temp_dir().join(format!("veluno-sha256-{}", std::process::id()));
         std::fs::write(&file, b"abc").unwrap();
         let digest = sha256(&file);
         std::fs::remove_file(&file).unwrap();
-        assert!(digest.unwrap().eq_ignore_ascii_case(
+        assert_eq!(
+            digest.unwrap(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        ));
+        );
     }
 
     #[test]
@@ -529,6 +635,61 @@ bbb222  veluno-setup.exe
         );
         assert_eq!(checksum_for(sums, "veluno.exe").as_deref(), Some("aaa111"));
         assert_eq!(checksum_for(sums, "other.exe"), None);
+    }
+
+    #[test]
+    fn update_signature_policy_pins_to_a_valid_publisher() {
+        let valid = |subject: &str| Signer::Valid(subject.into());
+        assert!(signer_allows_update(&Signer::Unsigned, &Signer::Unsigned));
+        assert!(signer_allows_update(&Signer::Unsigned, &valid("CN=Veluno")));
+        assert!(!signer_allows_update(&Signer::Unsigned, &Signer::Broken));
+        assert!(signer_allows_update(
+            &valid("CN=Veluno"),
+            &valid("CN=Veluno")
+        ));
+        assert!(!signer_allows_update(
+            &valid("CN=Veluno"),
+            &valid("CN=Someone Else")
+        ));
+        assert!(!signer_allows_update(
+            &valid("CN=Veluno"),
+            &Signer::Unsigned
+        ));
+        assert!(!signer_allows_update(&valid("CN=Veluno"), &Signer::Broken));
+        assert!(!signer_allows_update(&Signer::Broken, &Signer::Unsigned));
+        assert!(!signer_allows_update(&Signer::Broken, &valid("CN=Veluno")));
+    }
+
+    #[test]
+    fn pe_certificate_table_precheck_detects_embedded_signatures() {
+        let mut pe = vec![0u8; 512];
+        pe[..2].copy_from_slice(b"MZ");
+        pe[60..64].copy_from_slice(&0x80u32.to_le_bytes());
+        pe[0x80..0x84].copy_from_slice(b"PE\0\0");
+        let opt = 0x80 + 24;
+        pe[opt..opt + 2].copy_from_slice(&0x20bu16.to_le_bytes());
+        pe[opt + 108..opt + 112].copy_from_slice(&16u32.to_le_bytes());
+        assert_eq!(pe_bytes_have_no_certificate_table(&pe), Some(true));
+
+        let sec = opt + 112 + 32;
+        pe[sec..sec + 8].copy_from_slice(&[1, 0, 0, 0, 64, 0, 0, 0]);
+        assert_eq!(pe_bytes_have_no_certificate_table(&pe), Some(false));
+
+        assert_eq!(pe_bytes_have_no_certificate_table(b"not a pe"), None);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn signer_reads_unsigned_and_microsoft_signed_files() {
+        let script = std::env::temp_dir().join(format!("veluno-signer-{}.ps1", std::process::id()));
+        std::fs::write(&script, "Write-Output 'unsigned'").unwrap();
+        let unsigned = signer(&script);
+        std::fs::remove_file(&script).unwrap();
+        assert_eq!(unsigned.unwrap(), Signer::Unsigned);
+        match signer(&system_binary("explorer.exe")).unwrap() {
+            Signer::Valid(subject) => assert!(subject.contains("Microsoft"), "{subject}"),
+            other => panic!("expected a valid Microsoft signature, got {other:?}"),
+        }
     }
 
     #[test]

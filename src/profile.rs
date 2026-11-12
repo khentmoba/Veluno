@@ -50,6 +50,13 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     result
 }
 
+/// Returns the guard even after a panic poisoned the mutex; the stored values stay usable.
+pub fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 pub fn allowed_url(value: &str) -> bool {
     normalize_url(value).is_some()
 }
@@ -151,6 +158,17 @@ pub fn startup_url(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn poisoned_locks_keep_their_data() {
+        let values = std::sync::Mutex::new(vec![1, 2, 3]);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = values.lock().unwrap();
+            panic!("poison the lock");
+        }));
+        assert!(values.is_poisoned());
+        assert_eq!(*lock(&values), vec![1, 2, 3]);
+    }
 
     #[test]
     fn legacy_profile_moves_without_overwriting_a_current_profile() {
