@@ -375,9 +375,11 @@ fn signer(file: &std::path::Path) -> Result<Signer, String> {
     use base64::Engine as _;
     const SCRIPT: &str = r#"
 $signature = Get-AuthenticodeSignature -LiteralPath $env:VELUNO_SIGNED_FILE
+if (-not $signature) { exit 1 }
 $subject = ''
 if ($signature.SignerCertificate) { $subject = $signature.SignerCertificate.Subject }
-[Console]::Out.Write($signature.Status.ToString() + "`n" + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($subject)))
+Write-Output $signature.Status.ToString()
+Write-Output ([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($subject)))
 "#;
     let encoded = base64::engine::general_purpose::STANDARD.encode(
         SCRIPT
@@ -397,7 +399,14 @@ if ($signature.SignerCertificate) { $subject = $signature.SignerCertificate.Subj
     let status = lines.next().unwrap_or_default().trim();
     let subject = lines.next().unwrap_or_default().trim();
     match status {
-        "" => Err("Could not verify the update's signature.".into()),
+        "" => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!(
+                "Could not verify the update's signature (exit {}, {}).",
+                output.status,
+                stderr.trim()
+            ))
+        }
         "NotSigned" => Ok(Signer::Unsigned),
         "Valid" => {
             let bytes = base64::engine::general_purpose::STANDARD
