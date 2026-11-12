@@ -4,7 +4,8 @@ use std::{cell::RefCell, collections::VecDeque};
 use tao::{event_loop::EventLoopProxy, window::Window};
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY, ICoreWebView2Deferral,
-    ICoreWebView2PermissionRequestedEventArgs, ICoreWebView2PermissionRequestedEventArgs3,
+    ICoreWebView2Environment, ICoreWebView2PermissionRequestedEventArgs,
+    ICoreWebView2PermissionRequestedEventArgs3,
 };
 use windows::core::Interface;
 use wry::{PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder};
@@ -125,6 +126,7 @@ impl Prompt {
         context: &mut WebContext,
         proxy: EventLoopProxy<UserEvent>,
         _headless: bool,
+        environment: ICoreWebView2Environment,
     ) -> wry::Result<Self> {
         let loaded = proxy.clone();
         let mut builder = WebViewBuilder::new_with_web_context(context)
@@ -152,7 +154,9 @@ impl Prompt {
         #[cfg(windows)]
         {
             use wry::WebViewBuilderExtWindows;
-            builder = builder.with_additional_browser_args(crate::app::chrome_browser_arguments());
+            builder = builder
+                .with_additional_browser_args(crate::app::chrome_browser_arguments())
+                .with_environment(environment);
         }
         Ok(Self {
             view: builder.build_as_child(window)?,

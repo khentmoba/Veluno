@@ -1214,6 +1214,11 @@ fn build_chrome_views(
         sidebar_builder = sidebar_builder.with_additional_browser_args(chrome_browser_arguments());
     }
     let sidebar = sidebar_builder.build_as_child(window)?;
+    // Chrome views share this profile and browser configuration, so they reuse the sidebar's environment.
+    let environment = {
+        use wry::WebViewExtWindows;
+        sidebar.environment()
+    };
     let palette_proxy = proxy.clone();
     let palette_ready = proxy.clone();
     let mut palette_builder = WebViewBuilder::new_with_web_context(chrome_context)
@@ -1242,11 +1247,18 @@ fn build_chrome_views(
     #[cfg(windows)]
     {
         use wry::WebViewBuilderExtWindows;
-        palette_builder = palette_builder.with_additional_browser_args(chrome_browser_arguments());
+        palette_builder = palette_builder
+            .with_additional_browser_args(chrome_browser_arguments())
+            .with_environment(environment.clone());
     }
     let palette = palette_builder.build_as_child(window)?;
-    let permission_prompt =
-        permission::Prompt::new(window, chrome_context, proxy.clone(), headless)?;
+    let permission_prompt = permission::Prompt::new(
+        window,
+        chrome_context,
+        proxy.clone(),
+        headless,
+        environment.clone(),
+    )?;
     let topbar_ready = proxy.clone();
     let topbar_proxy = proxy.clone();
     let mut topbar_builder = WebViewBuilder::new_with_web_context(chrome_context)
@@ -1275,7 +1287,9 @@ fn build_chrome_views(
     #[cfg(windows)]
     {
         use wry::WebViewBuilderExtWindows;
-        topbar_builder = topbar_builder.with_additional_browser_args(chrome_browser_arguments());
+        topbar_builder = topbar_builder
+            .with_additional_browser_args(chrome_browser_arguments())
+            .with_environment(environment.clone());
     }
     let topbar = topbar_builder.build_as_child(window)?;
     let popup_ready = proxy.clone();
@@ -1300,8 +1314,9 @@ fn build_chrome_views(
     #[cfg(windows)]
     {
         use wry::WebViewBuilderExtWindows;
-        popup_bar_builder =
-            popup_bar_builder.with_additional_browser_args(chrome_browser_arguments());
+        popup_bar_builder = popup_bar_builder
+            .with_additional_browser_args(chrome_browser_arguments())
+            .with_environment(environment.clone());
     }
     let popup_bar = popup_bar_builder.build_as_child(popup_window)?;
     Ok((sidebar, palette, permission_prompt, topbar, popup_bar))
