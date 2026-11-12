@@ -13,7 +13,7 @@ use std::{
 };
 use tao::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
 use tao::{
-    dpi::{LogicalPosition, LogicalSize, Position, Size},
+    dpi::{LogicalPosition, LogicalSize, PhysicalPosition, Position, Size},
     event::{ElementState, Event, MouseButton, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
     window::{CursorIcon, Fullscreen, Icon, Window, WindowBuilder},
@@ -314,10 +314,7 @@ pub enum UserEvent {
 /// Fullscreens the window. Windows pins a maximized window's client area to the work area, so the
 /// maximized state has to be cleared first or the page keeps the taskbar-sized gap it had.
 fn fullscreen_window(window: &Window, maximize_after: &mut bool) {
-    *maximize_after = window.is_maximized();
-    if *maximize_after {
-        window.set_maximized(false);
-    }
+    *maximize_after = desktop::unmaximize(window);
     window.set_fullscreen(Some(Fullscreen::Borderless(None)));
 }
 
@@ -2341,10 +2338,9 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         );
         if content_fullscreen.is_some() {
             // The page fills the window while it is fullscreen, so the browser chrome steps aside.
-            let size = window.inner_size().to_logical::<f64>(window.scale_factor());
             content_bounds = Rect {
-                position: Position::Logical(LogicalPosition::new(0., 0.)),
-                size: Size::Logical(size),
+                position: Position::Physical(PhysicalPosition::new(0, 0)),
+                size: Size::Physical(window.inner_size()),
             };
             sidebar_bounds = Rect {
                 position: Position::Logical(LogicalPosition::new(0., 0.)),

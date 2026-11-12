@@ -293,6 +293,36 @@ pub fn vsync() {
     std::thread::sleep(std::time::Duration::from_millis(16));
 }
 
+pub fn unmaximize(window: &tao::window::Window) -> bool {
+    let mut was_maximized = window.is_maximized();
+    if was_maximized {
+        window.set_maximized(false);
+    }
+    #[cfg(windows)]
+    {
+        use tao::platform::windows::WindowExtWindows;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetWindowPlacement, IsZoomed, SW_MAXIMIZE, SW_RESTORE, ShowWindow, WINDOWPLACEMENT,
+        };
+        let hwnd = HWND(window.hwnd() as _);
+        // SAFETY: `hwnd` is borrowed from `window`, which is alive on the UI thread.
+        unsafe {
+            let mut placement = WINDOWPLACEMENT {
+                length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+                ..Default::default()
+            };
+            let placed_max = GetWindowPlacement(hwnd, &mut placement).is_ok()
+                && placement.showCmd == SW_MAXIMIZE.0 as u32;
+            if IsZoomed(hwnd).as_bool() || placed_max {
+                was_maximized = true;
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+        }
+    }
+    was_maximized
+}
+
 pub fn round(view: &WebView, width: i32, height: i32, radius: i32) {
     #[cfg(windows)]
     {
