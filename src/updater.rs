@@ -191,8 +191,11 @@ pub fn download_and_apply_update(download_url: &str) -> Result<(), String> {
         )
     };
     let release = download_url.rsplit_once('/').map_or("", |(base, _)| base);
+    // The checksum list does not depend on the download, so it is fetched while the file downloads.
+    let sums_url = format!("{release}/SHA256SUMS");
+    let sums = std::thread::spawn(move || fetch_sums(&sums_url));
     download(&format!("{release}/{asset}"), &file)?;
-    if let Err(error) = verify_download(&format!("{release}/SHA256SUMS"), asset, &file) {
+    if let Err(error) = verify_download(sums, asset, &file) {
         let _ = std::fs::remove_file(&file);
         return Err(error);
     }
@@ -246,7 +249,26 @@ pub(crate) fn download(url: &str, file: &std::path::Path) -> Result<(), String> 
     Ok(())
 }
 
-fn verify_download(sums_url: &str, asset: &str, file: &std::path::Path) -> Result<(), String> {
+fn fetch_sums(sums_url: &str) -> Option<String> {
+    run_curl(&[
+        "-s",
+        "-f",
+        "-L",
+        "--max-time",
+        "15",
+        "--proto",
+        "=https",
+        "--proto-redir",
+        "=https",
+        sums_url,
+    ])
+}
+
+fn verify_download(
+    sums: std::thread::JoinHandle<Option<String>>,
+    asset: &str,
+    file: &std::path::Path,
+) -> Result<(), String> {
     let bytes = std::fs::read(file).map_err(|error| error.to_string())?;
     if bytes.len() < 500_000 {
         return Err(format!(
@@ -260,19 +282,11 @@ fn verify_download(sums_url: &str, asset: &str, file: &std::path::Path) -> Resul
                 .into(),
         );
     }
-    let sums = run_curl(&[
-        "-s",
-        "-f",
-        "-L",
-        "--max-time",
-        "15",
-        "--proto",
-        "=https",
-        "--proto-redir",
-        "=https",
-        sums_url,
-    ])
-    .ok_or("Could not fetch the release checksums. Your current version was kept.")?;
+    let sums = sums
+        .join()
+        .ok()
+        .flatten()
+        .ok_or("Could not fetch the release checksums. Your current version was kept.")?;
     let expected = checksum_for(&sums, asset)
         .ok_or("This release has no checksum for the update. Your current version was kept.")?;
     let actual = sha256(file)?;
@@ -401,6 +415,20 @@ fn valid_executable(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn verify_download_checks_the_fetched_checksums() {
+        let file = std::env::temp_dir().join(format!("veluno-sums-{}.bin", std::process::id()));
+        std::fs::write(&file, vec![7u8; 500_000]).unwrap();
+        let listed = format!("{}  veluno-setup.exe\n", sha256(&file).unwrap());
+        let fetched = std::thread::spawn(move || Some(listed));
+        assert!(verify_download(fetched, "veluno-setup.exe", &file).is_ok());
+        let missing = std::thread::spawn(|| None);
+        let error = verify_download(missing, "veluno-setup.exe", &file).unwrap_err();
+        assert!(error.contains("Could not fetch the release checksums"));
+        std::fs::remove_file(&file).unwrap();
+    }
 
     #[test]
     #[cfg(windows)]

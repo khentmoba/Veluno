@@ -14,7 +14,7 @@ use base64::{Engine as _, prelude::BASE64_STANDARD};
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
 const CATALOG: &str = "https://raw.githubusercontent.com/brave/adblock-resources/master/filter_lists/list_catalog.json";
@@ -22,6 +22,8 @@ const RESOURCES: &str =
     "https://raw.githubusercontent.com/brave/adblock-resources/master/dist/resources.json";
 const REFRESH: Duration = Duration::from_secs(24 * 60 * 60);
 const RETRY: Duration = Duration::from_secs(60 * 60);
+/// Filter lists downloaded at once.
+const FETCH_WORKERS: usize = 6;
 
 /// Bumped whenever a freshly built engine lands on disk, so tabs reload it.
 static GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -217,26 +219,74 @@ fn fetch(url: &str) -> Option<String> {
     ])
 }
 
+/// Downloads `urls` a few at a time. The results keep the order of `urls`.
+fn fetch_all(
+    urls: &[&str],
+    download: impl Fn(&str) -> Option<String> + Sync,
+) -> Vec<Option<String>> {
+    let next = AtomicUsize::new(0);
+    let mut results = vec![None; urls.len()];
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..FETCH_WORKERS.min(urls.len()))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut fetched = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(&url) = urls.get(index) else {
+                            break fetched;
+                        };
+                        fetched.push((index, download(url)));
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            if let Ok(fetched) = worker.join() {
+                for (index, text) in fetched {
+                    results[index] = text;
+                }
+            }
+        }
+    });
+    results
+}
+
 fn rebuild() -> Result<(), String> {
     let catalog: Vec<CatalogList> = serde_json::from_str(
         &fetch(CATALOG).ok_or("Could not download Brave's filter list catalog.")?,
     )
     .map_err(|error| error.to_string())?;
+    let sources: Vec<(ParseOptions, &str)> = catalog
+        .iter()
+        .filter(|list| wanted(list))
+        .flat_map(|list| {
+            let options = ParseOptions {
+                permissions: PermissionMask::from_bits(list.permission_mask),
+                ..ParseOptions::default()
+            };
+            list.sources
+                .iter()
+                .filter(|source| wanted_source(source))
+                .map(move |source| (options, source.url.as_str()))
+        })
+        .collect();
+    let urls: Vec<&str> = sources.iter().map(|(_, url)| *url).collect();
+    // The resources file does not depend on the lists, so it downloads alongside them.
+    let (texts, resources) = std::thread::scope(|scope| {
+        let resources = scope.spawn(|| fetch(RESOURCES));
+        let texts = fetch_all(&urls, fetch);
+        (texts, resources.join().ok().flatten())
+    });
     let mut filters = FilterSet::new(false);
     let (mut loaded, mut failed) = (0, 0);
-    for list in catalog.iter().filter(|list| wanted(list)) {
-        let options = ParseOptions {
-            permissions: PermissionMask::from_bits(list.permission_mask),
-            ..ParseOptions::default()
-        };
-        for source in list.sources.iter().filter(|source| wanted_source(source)) {
-            match fetch(&source.url) {
-                Some(text) => {
-                    filters.add_filter_list(text, options);
-                    loaded += 1;
-                }
-                None => failed += 1,
+    for ((options, _), text) in sources.iter().zip(texts) {
+        match text {
+            Some(text) => {
+                filters.add_filter_list(text, *options);
+                loaded += 1;
             }
+            None => failed += 1,
         }
     }
     // Keep the previous engine rather than replace it with a mostly empty one.
@@ -246,7 +296,7 @@ fn rebuild() -> Result<(), String> {
             loaded + failed
         ));
     }
-    let resources = fetch(RESOURCES)
+    let resources = resources
         .filter(|json| serde_json::from_str::<Vec<Resource>>(json).is_ok())
         .ok_or("Could not download Brave's ad blocking resources.")?;
     let engine = Engine::new_with_filter_set(filters);
@@ -276,6 +326,7 @@ fn wanted_source(source: &CatalogSource) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, mpsc};
 
     fn engine(rules: &[&str]) -> Engine {
         let mut filters = FilterSet::new(false);
@@ -292,6 +343,29 @@ mod tests {
             permission: PermissionMask::default(),
         }]);
         engine
+    }
+
+    #[test]
+    fn filter_lists_download_at_once_and_keep_their_order() {
+        // Each download waits for the other to start, so this passes only when both run together.
+        let (a_tx, a_rx) = mpsc::channel::<()>();
+        let (b_tx, b_rx) = mpsc::channel::<()>();
+        let (a_rx, b_rx) = (Mutex::new(a_rx), Mutex::new(b_rx));
+        let texts = fetch_all(&["a", "b"], |url| {
+            let (sent, received) = if url == "a" {
+                (&a_tx, &b_rx)
+            } else {
+                (&b_tx, &a_rx)
+            };
+            sent.send(()).ok()?;
+            received
+                .lock()
+                .ok()?
+                .recv_timeout(Duration::from_secs(5))
+                .ok()?;
+            Some(url.to_string())
+        });
+        assert_eq!(texts, [Some("a".into()), Some("b".into())]);
     }
 
     #[test]
