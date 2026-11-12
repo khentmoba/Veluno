@@ -840,7 +840,7 @@ pub fn attach(
         view.controller().add_AcceleratorKeyPressed(
             &AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
                 use windows::Win32::UI::Input::KeyboardAndMouse::{
-                    GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_SHIFT,
+                    GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_ESCAPE, VK_MENU, VK_SHIFT,
                 };
                 let Some(args) = args else { return Ok(()) };
                 let mut kind = COREWEBVIEW2_KEY_EVENT_KIND::default();
@@ -861,6 +861,14 @@ pub fn attach(
                     args.PhysicalKeyStatus(&mut status)?;
                     if !status.WasKeyDown.as_bool() {
                         let _ = keys.send_event(UserEvent::Command(command));
+                    }
+                } else if key == u32::from(VK_ESCAPE.0) {
+                    // Not handled, so the page still receives Escape.
+                    let mut status = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
+                    args.PhysicalKeyStatus(&mut status)?;
+                    if !status.WasKeyDown.as_bool() {
+                        let _ = keys
+                            .send_event(UserEvent::Command(crate::app::Command::CloseDownloads));
                     }
                 }
                 Ok(())
@@ -1527,28 +1535,6 @@ pub fn attach_popup(view: &WebView, proxy: EventLoopProxy<UserEvent>) -> wry::Re
 #[cfg(not(windows))]
 pub fn attach_popup(_: &WebView, _: EventLoopProxy<UserEvent>) -> wry::Result<()> {
     Ok(())
-}
-
-pub fn downloads(view: &WebView) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_9;
-        use windows::core::Interface;
-        use wry::WebViewExtWindows;
-        // SAFETY: `view.webview()` is borrowed for the call, and `cast` fails cleanly when the runtime lacks
-        // `ICoreWebView2_9`.
-        unsafe {
-            view.webview()
-                .cast::<ICoreWebView2_9>()
-                .and_then(|view| view.OpenDefaultDownloadDialog())
-                .map_err(|error| error.to_string())
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = view;
-        Err("Downloads are available on Windows.".into())
-    }
 }
 
 pub fn navigate(view: &WebView, backwards: bool) {

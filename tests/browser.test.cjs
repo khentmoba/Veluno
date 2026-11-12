@@ -142,7 +142,7 @@ assert.deepEqual(press('B', { ctrlKey: true, shiftKey: true }), { action: 'toggl
 assert.deepEqual(press('N', { ctrlKey: true, shiftKey: true }), { action: 'new_private_tab' });
 assert.deepEqual(press('d', { ctrlKey: true }), { action: 'toggle_bookmark' });
 assert.deepEqual(press('l', { ctrlKey: true }), { action: 'focus_address' });
-assert.deepEqual(press('j', { ctrlKey: true }), { action: 'open_downloads' });
+assert.deepEqual(press('j', { ctrlKey: true }), { action: 'toggle_downloads' });
 assert.deepEqual(press('f', { ctrlKey: true }), { action: 'find_in_page' });
 assert.deepEqual(press('F', { ctrlKey: true, shiftKey: true }), { action: 'focus_tab_search' });
 assert.deepEqual(press('w', { ctrlKey: true }), { action: 'close_active_tab' });

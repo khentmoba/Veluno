@@ -8,7 +8,7 @@
 :root { color-scheme: dark; --bg:#101011; --surface:#1c1c21; --surface-2:#232329; --hover:#282830; --active:#32323b; --line:#3b3b44; --text:#f8f8fa; --muted:#c8c8d2; --accent:#dedee3; font-family:"Segoe UI",system-ui,sans-serif; font-size:13px; }
 * { box-sizing:border-box; }
 html { background:var(--bg); overflow:hidden; }
-body { margin:0; height:100vh; min-width:260px; overflow:hidden; background:var(--bg); color:var(--text); display:flex; flex-direction:column; padding:12px; gap:12px; user-select:none; border:1px solid transparent; transition:margin 240ms cubic-bezier(.16,1,.3,1),height 240ms cubic-bezier(.16,1,.3,1),border-radius 240ms cubic-bezier(.16,1,.3,1),box-shadow 240ms cubic-bezier(.16,1,.3,1),border-color 240ms cubic-bezier(.16,1,.3,1); }
+body { --float:calc(1 - var(--dock, 1)); margin:calc(6px * var(--float)); height:calc(100vh - 12px * var(--float)); min-width:calc(260px - 12px * var(--float)); overflow:hidden; background:var(--bg); color:var(--text); display:flex; flex-direction:column; padding:12px; gap:12px; user-select:none; border:1px solid color-mix(in srgb, var(--line) calc(var(--float) * 100%), transparent); border-radius:calc(14px * var(--float)); box-shadow:0 12px 32px rgb(0 0 0 / calc(.6 * var(--float))); }
 button,input { font:inherit; } button { color:inherit; cursor:pointer; } button,a,input { -webkit-tap-highlight-color:transparent; }
 button { border:0; background:none; border-radius:8px; } button:hover { background:var(--hover); } button:disabled { opacity:.5; cursor:default; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
@@ -51,19 +51,9 @@ details { position:relative; } summary { list-style:none; cursor:pointer; } summ
 .update-btn { background:var(--active); color:var(--text); border:1px solid var(--line); padding:6px 10px; border-radius:6px; font-size:11.5px; font-weight:600; text-align:center; }
 .update-btn:hover { background:var(--accent); color:#101011; }
 .update-header span { flex:1; }
-.downloads-panel { position:absolute; bottom:calc(100% + 8px); left:0; right:0; z-index:30; max-height:min(360px,calc(100vh - 180px)); overflow:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; background:var(--surface-2); border:1px solid var(--line); border-radius:11px; padding:10px; box-shadow:0 16px 38px rgb(0 0 0 / .6); }
 .footer { position:relative; }
-.downloads-heading { display:flex; align-items:center; justify-content:space-between; } .downloads-heading .text-button { background:none; border:0; color:var(--muted); font-size:11px; font-weight:500; cursor:pointer; padding:2px 4px; white-space:nowrap; } .downloads-heading .text-button:hover { color:var(--text); } .downloads-summary { color:var(--muted); font-size:11.5px; margin:8px 0 0; font-variant-numeric:tabular-nums; }
-.download-item { padding:10px 0; border-top:1px solid var(--line); font-size:12px; overflow-wrap:anywhere; }
-.download-item strong { display:block; font-weight:600; color:var(--text); }
-.download-item small { display:block; color:var(--muted); margin:5px 0; font-variant-numeric:tabular-nums; }
-.download-item progress { width:100%; height:5px; accent-color:var(--accent); }
-.download-item button { padding:6px 9px; background:var(--active); font-size:11.5px; font-weight:500; }
-.download-actions { display:flex; gap:6px; margin-top:6px; }
-#downloads-empty { color:var(--muted); font-size:12px; }
 .toast { flex-shrink:0; border:1px solid var(--line); padding:12px; background:var(--surface-2); border-radius:10px; font-size:12px; box-shadow:0 8px 24px #0006; } .toast button { color:var(--accent); padding:4px 0; display:block; margin-top:4px; }
-body.floating { min-width:0; margin:6px; height:calc(100vh - 12px); border-radius:14px; border-color:var(--line); box-shadow:0 12px 32px #0009; }
-body.collapsed { visibility:hidden; pointer-events:none; transition:visibility 0s linear 340ms,margin 240ms cubic-bezier(.16,1,.3,1),height 240ms cubic-bezier(.16,1,.3,1),border-radius 240ms cubic-bezier(.16,1,.3,1),box-shadow 240ms cubic-bezier(.16,1,.3,1),border-color 240ms cubic-bezier(.16,1,.3,1); }
+body.collapsed { visibility:hidden; pointer-events:none; transition:visibility 0s linear 340ms; }
 button,summary { transition:background-color 160ms cubic-bezier(.2,0,0,1),border-color 160ms cubic-bezier(.2,0,0,1),color 160ms cubic-bezier(.2,0,0,1),transform 180ms cubic-bezier(.16,1,.3,1); }
 button:active:not(:disabled),summary:active { transform:scale(.97); transition-duration:70ms; }
 .address { transition:border-color 180ms cubic-bezier(.2,0,0,1),background-color 180ms cubic-bezier(.2,0,0,1),box-shadow 180ms cubic-bezier(.2,0,0,1); }
@@ -71,7 +61,7 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 .tab-main:active { transform:none; }
 .close-tab { transition:opacity 120ms ease,background-color 120ms ease,color 120ms ease; }
 .toast,.activity:not([hidden]) { animation:surface-in 200ms cubic-bezier(.16,1,.3,1); }
-.menu,.downloads-panel,.site-panel { animation:menu-in 200ms cubic-bezier(.16,1,.3,1); }
+.menu,.site-panel { animation:menu-in 200ms cubic-bezier(.16,1,.3,1); }
 @keyframes menu-in { from { transform:translateY(5px); } to { transform:translateY(0); } }
 .address-results { animation:address-grow 180ms cubic-bezier(.16,1,.3,1); }
 @keyframes address-grow { from { opacity:0; transform:scaleY(.88); } to { opacity:1; transform:scaleY(1); } }
@@ -156,7 +146,6 @@ button:active:not(:disabled),summary:active { transform:scale(.97); transition-d
 <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="toast-undo" title="Reopen closed tab (Ctrl+Shift+T)" hidden>Undo</button></div>
 </div>
 <footer class="footer">
-<section class="downloads-panel" id="downloads-panel" aria-label="Downloads" hidden><div class="downloads-heading"><strong>Downloads</strong><div style="display:flex;align-items:center;gap:4px"><button class="text-button" id="reveal-downloads" hidden>Show folder</button><button class="text-button" id="clear-downloads" hidden>Clear</button><button class="icon" id="close-downloads" aria-label="Close downloads"><svg><use href="#close"/></svg></button></div></div><p id="downloads-empty">No downloads this session.</p><div class="downloads-summary" id="downloads-summary" hidden></div><div id="download-items"></div></section>
 <button class="download-control" id="btn-downloads" title="Downloads (Ctrl+J)" aria-label="Downloads"><svg><use href="#download"/></svg><span>Downloads</span><small id="download-count"></small></button>
 <button class="sleep-control" id="btn-ram-saver" title="Unload background tabs to free memory (Ctrl+Shift+S)"><svg><use href="#moon"/></svg><span id="sleep-label">Sleep background tabs</span><svg><use href="#forward"/></svg></button>
 <div class="workspace-switcher"><details id="profiles"><summary aria-label="Switch workspace"><svg aria-hidden="true"><use href="#globe"/></svg><span id="profile-current">General</span></summary><div class="menu"><p>Workspaces</p><div id="spaces" aria-label="Workspaces"></div><div id="workspace-emojis" role="group" aria-label="Workspace icon"></div><form id="profile-form"><label for="profile-name">New workspace</label><input id="profile-name" placeholder="e.g. School" maxlength="40" required autocomplete="off"><small>Workspaces organize tabs and pins. Website logins are shared.</small><p id="profile-error" role="alert" hidden></p><button type="submit">Create workspace</button></form><div class="workspace-actions"><button type="button" id="rename-workspace">Rename workspace</button><button type="button" id="delete-workspace">Delete workspace</button></div>
@@ -205,7 +194,8 @@ let tabSignature='',tabLayoutSignature='';
 reducedMotion.addEventListener('change',()=>{if(reducedMotion.matches)document.getAnimations().filter(animation=>animation.id==='tab-layout').forEach(animation=>animation.finish());});
 let toastTimer;
 let inside=false,hideTimer;
-const syncCollapsed=()=>{ document.body.classList.toggle('floating',!!currentState.sidebar_collapsed); document.body.classList.toggle('collapsed',!!currentState.sidebar_collapsed&&!currentState.sidebar_peek); };
+const syncCollapsed=()=>{ document.body.classList.toggle('collapsed',!!currentState.sidebar_collapsed&&!currentState.sidebar_peek); };
+window.setDock=value=>document.documentElement.style.setProperty('--dock',value);
 function showToast(message,undo=false) { clearTimeout(toastTimer); $('toast-message').textContent=message; $('toast-undo').hidden=!undo; $('toast').hidden=false; toastTimer=setTimeout(()=> $('toast').hidden=true,6000); }
 function activeTab() { return currentState.tabs.find(t=>t.id===currentState.active_tab_id); }
 // A live region only speaks when its text changes, so clear it before the next message.
@@ -399,37 +389,7 @@ window.updateState = state => {
  }
  $('recently-closed').hidden=!closed.length;
  if(state.downloads_open && !previous.downloads_open) closeAddressResults();
- $('downloads-panel').hidden=!state.downloads_open;
  $('btn-downloads').setAttribute('aria-expanded',String(!!state.downloads_open));
- if(JSON.stringify(previous.download_items)!==JSON.stringify(state.download_items)) {
-  const items=state.download_items||[];
-  $('downloads-empty').hidden=items.length>0;
-  const summary=Veluno.downloadSummary(items);
-  $('downloads-summary').textContent=summary.label;
-  $('downloads-summary').hidden=!summary.label;
-  $('reveal-downloads').hidden=summary.newest==null;
-  $('clear-downloads').hidden=!items.some(i=>i.status!=='downloading');
-  $('download-items').replaceChildren(...items.slice().reverse().map(item=>{
-   const row=document.createElement('div'); row.className='download-item';
-   const name=document.createElement('strong'); name.textContent=item.path.split(/[\\/]/).pop()||'Download'; name.title=item.path;
-   const detail=document.createElement('small');
-   const bytes=value=>`${(Math.max(0,value)/(1024*1024)).toFixed(1)} MB`;
-   const isComplete=item.status==='complete'||(item.status==='downloading'&&item.total>0&&item.received>=item.total);
-   detail.textContent=isComplete?`Complete · ${bytes(item.received)}`:item.status==='cancelled'?`Cancelled · ${bytes(item.received)} received`:item.status==='interrupted'?`Interrupted · ${bytes(item.received)} received`:`Downloading · ${bytes(item.received)}${item.total>0?` of ${bytes(item.total)} (${Math.min(100,Math.floor(item.received/item.total*100))}%)`:''}`;
-   row.append(name,detail);
-   if(item.status==='downloading'&&!isComplete) { const progress=document.createElement('progress'); progress.setAttribute('aria-label',`Downloading ${name.textContent}`); if(item.total>0) { progress.max=item.total; progress.value=item.received; } row.append(progress); }
-   if(item.status==='downloading'&&!isComplete) { const button=document.createElement('button'); button.textContent='Cancel'; button.onclick=()=>Veluno.send('cancel_download',{id:item.id}); row.append(button); }
-   if(isComplete) {
-    name.style.cursor='pointer';
-    name.onclick=()=>Veluno.send('open_download',{id:item.id});
-    const openBtn=document.createElement('button'); openBtn.textContent='Open'; openBtn.onclick=()=>Veluno.send('open_download',{id:item.id});
-    const folderBtn=document.createElement('button'); folderBtn.textContent='Show in folder'; folderBtn.onclick=()=>Veluno.send('reveal_download',{id:item.id});
-    const actions=document.createElement('div'); actions.className='download-actions'; actions.append(openBtn,folderBtn);
-    row.append(actions);
-   }
-   return row;
-  }));
- }
  if(state.update_available && state.dismissed_update_version!==state.update_available.version) {
   $('update-banner').hidden=false;
   $('update-text').textContent=`Veluno v${state.update_available.version} available`;
@@ -442,7 +402,7 @@ window.updateState = state => {
  }
 };
 window.focusTabSearch=()=>{ $('tab-search').hidden=false; $('btn-search-tabs').setAttribute('aria-expanded','true'); $('tab-search').focus(); $('tab-search').select(); };
-window.focusAddress=()=>{ if(!$('downloads-panel').hidden) { $('downloads-panel').hidden=true; Veluno.send('close_downloads'); } let tries=0; const focus=()=>{ $('url-input').focus(); $('url-input').select(); if(document.activeElement!==$('url-input')&&++tries<10) setTimeout(focus,50); }; focus(); };
+window.focusAddress=()=>{ if(currentState.downloads_open) Veluno.send('close_downloads'); let tries=0; const focus=()=>{ $('url-input').focus(); $('url-input').select(); if(document.activeElement!==$('url-input')&&++tries<10) setTimeout(focus,50); }; focus(); };
 for(const [id,action] of Object.entries({'btn-back':'back','btn-forward':'forward','btn-reload':'reload','btn-add-tab':'new_tab','btn-toggle-sidebar':'toggle_sidebar','btn-reopen-tab':'restore_closed_tab'})) $(id).onclick=()=>Veluno.send(action);
 $('btn-reload').onclick=()=>Veluno.send(currentState.is_loading?'stop':'reload');
 $('btn-home').onclick=()=>Veluno.navigate('veluno://newtab');
@@ -482,7 +442,6 @@ function addressOptionIcon(option) {
  return container;
 }
 function renderAddressResults() {
- if(!$('downloads-panel').hidden) { closeAddressResults(); return; }
  addressQuery=$('url-input').value;
  addressOptions=Veluno.suggestions(addressQuery,currentState,addressHistory);
  const results=$('address-results'); results.replaceChildren();
@@ -522,7 +481,7 @@ function submitAddress(newTab=false) {
  $('url-input').blur(); closeAddressResults();
 }
 $('address-form').onsubmit=e=>{ e.preventDefault(); submitAddress(); };
-$('url-input').onfocus=()=>{ if(!$('downloads-panel').hidden) { $('downloads-panel').hidden=true; Veluno.send('close_downloads'); } const active=activeTab(); if(!$('url-input').value || $('url-input').value===displayAddress(active?.url)) $('url-input').value=active?.url==='veluno://newtab'?'':active?.url||''; $('url-input').select(); renderAddressResults(); Veluno.send('address_suggestions'); };
+$('url-input').onfocus=()=>{ if(currentState.downloads_open) Veluno.send('close_downloads'); const active=activeTab(); if(!$('url-input').value || $('url-input').value===displayAddress(active?.url)) $('url-input').value=active?.url==='veluno://newtab'?'':active?.url||''; $('url-input').select(); renderAddressResults(); Veluno.send('address_suggestions'); };
 $('url-input').oninput=()=>{if(!addressComposing)renderAddressResults();};
 $('url-input').addEventListener('compositionstart',()=>{addressComposing=true;closeAddressResults();});
 $('url-input').addEventListener('compositionend',()=>{addressComposing=false;if(document.activeElement===$('url-input'))renderAddressResults();});
@@ -545,9 +504,6 @@ $('btn-pin-tab').onclick=()=>Veluno.send('toggle_pin',{id:currentState.active_ta
 $('btn-clear-tabs').onclick=()=>Veluno.send('clear_unpinned_tabs');
 $('btn-ram-saver').onclick=()=>Veluno.send('sleep_inactive_tabs');
 $('toast-undo').onclick=()=>{ Veluno.send('restore_closed_tab'); $('toast').hidden=true; };
-$('close-downloads').onclick=()=>Veluno.send('close_downloads');
-$('clear-downloads').onclick=()=>Veluno.send('clear_downloads');
-$('reveal-downloads').onclick=()=>{ const newest=Veluno.downloadSummary(currentState.download_items||[]).newest; if(newest!=null) Veluno.send('reveal_download',{id:newest}); };
 $('dismiss-update').onclick=()=>{ const version=currentState.update_available?.version; if(version) { currentState.dismissed_update_version=version; $('update-banner').hidden=true; Veluno.send('dismiss_update',{version}); } };
 $('btn-downloads').onclick=()=>Veluno.send('toggle_downloads');
 $('btn-default-browser').onclick=()=>Veluno.send('default_browser');
@@ -683,7 +639,7 @@ for(const menu of menus) {
 }
 tabMenu.addEventListener('keydown',e=>{ if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key)||tabMenu.hidden)return; e.preventDefault(); const items=[...tabMenu.querySelectorAll('button:not(:disabled)')]; const index=items.indexOf(document.activeElement); items[e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus(); });
 document.addEventListener('click',e=>{ for(const menu of menus) if(!menu.contains(e.target)) menu.open=false; if(!tabMenu.hidden&&!tabMenu.contains(e.target)) closeTabMenu(false); });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') { if(!$('downloads-panel').hidden) { e.preventDefault(); Veluno.send('close_downloads'); return; } if(!$('activity').hidden) { e.preventDefault(); $('activity').hidden=true; return; } closeTabMenu(); for(const menu of menus) if(menu.open) { menu.open=false; menu.querySelector('summary').focus(); } } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') { if(currentState.downloads_open) { e.preventDefault(); Veluno.send('close_downloads'); return; } if(!$('activity').hidden) { e.preventDefault(); $('activity').hidden=true; return; } closeTabMenu(); for(const menu of menus) if(menu.open) { menu.open=false; menu.querySelector('summary').focus(); } } });
 const sideResizeDir=e=>e.clientX<5?(e.clientY<8?'nw':e.clientY>window.innerHeight-8?'sw':'w'):e.clientY<5?'n':e.clientY>window.innerHeight-5?'s':'';
 document.addEventListener('mousemove',e=>{ const dir=sideResizeDir(e); document.body.style.cursor=dir==='nw'?'nwse-resize':dir==='sw'?'nesw-resize':dir==='w'?'ew-resize':dir==='n'||dir==='s'?'ns-resize':''; });
 document.addEventListener('mousedown',e=>{ if(e.button!==0||e.target.closest('button,input,summary,a')) return; const dir=sideResizeDir(e); if(dir) { e.preventDefault(); Veluno.send('resize_window',{direction:dir}); } });
