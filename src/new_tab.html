@@ -130,7 +130,7 @@ function commandSuggestions(rawQuery) {
   !activeWs?.private&&active?{command:'toggle_essential',payload:{id:state.active_tab_id},title:active.is_essential?'Remove from Essentials':'Add current tab to Essentials',detail:'Show as global icon tile at top of sidebar'}:null,
   !activeWs?.private?{command:'create_folder',payload:{name:'New Folder',tab_id:state.active_tab_id},title:'New folder with current tab',detail:'Group tabs into a collapsible sidebar folder'}:null,
   state.split?.length===2?{command:'swap_split',title:'Swap split view panes',detail:'Flip left and right panes',kbd:'Ctrl+Shift+\\'}:null,
-  state.split?.length===2?{command:'unsplit',title:'Close split view',detail:'Return to single pane view'}:null,
+  state.split?.length===2?{command:'unsplit',title:'Close split view',detail:'Return to single pane view',kbd:'Ctrl+Alt+U'}:{command:'split_recent',title:'Split with last used tab',detail:'Show two tabs side by side',kbd:'Ctrl+Alt+V'},
   ...(state.tabs||[]).filter(t=>t.workspace_id===state.active_workspace_id&&t.id!==state.active_tab_id&&!t.is_essential).slice(0,4).map(t=>({
    command:'split_tab',payload:{id:t.id},title:`Split view with "${t.custom_title||t.title||t.url}"`,detail:'Open side by side with current tab'
   })),

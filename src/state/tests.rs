@@ -918,3 +918,20 @@ fn close_shortcut_unloads_pinned_tabs_instead_of_closing_them() {
     assert_eq!(tab.url, "https://mail.example/");
     assert_eq!(state.active_tab_id, 1);
 }
+
+#[test]
+fn split_shortcut_pairs_the_active_tab_with_the_last_one_used() {
+    let mut state = BrowserState::new();
+    let older = state.add_tab(Some("https://a.example".into()), false);
+    let recent = state.add_tab(Some("https://b.example".into()), false);
+    let active = state.add_tab(Some("https://c.example".into()), false);
+    state.switch_tab(older);
+    state.switch_tab(recent);
+    state.switch_tab(active);
+    assert!(state.split_with_recent());
+    assert_eq!(state.split, Some([active, recent]));
+
+    let mut lonely = BrowserState::new();
+    assert!(!lonely.split_with_recent());
+    assert_eq!(lonely.split, None);
+}

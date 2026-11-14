@@ -84,6 +84,8 @@ fn shortcuts_map_virtual_keys_and_leave_page_keys_alone() {
         "Some(CycleWorkspace { forward: true })"
     );
     assert_eq!(action(0xDC, true, true, false), "Some(SwapSplit)");
+    assert_eq!(action(0x56, true, false, true), "Some(SplitRecent)");
+    assert_eq!(action(0x55, true, false, true), "Some(Unsplit)");
     assert_eq!(
         action(0x43, true, true, false),
         "Some(CopyUrl { markdown: false })"

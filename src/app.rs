@@ -148,6 +148,7 @@ pub enum Command {
     },
     ToggleSidePanel,
     Unsplit,
+    SplitRecent,
     ToggleEssential {
         id: usize,
     },
@@ -338,6 +339,8 @@ pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command>
             Some('R') => Command::ToggleRail,
             Some('Q') => Command::CycleWorkspace { forward: false },
             Some('E') => Command::CycleWorkspace { forward: true },
+            Some('V') => Command::SplitRecent,
+            Some('U') => Command::Unsplit,
             _ => return None,
         },
         (false, true) if !shift => match (letter, key) {
@@ -978,6 +981,8 @@ fn content(
                             | Command::ToggleRail
                             | Command::CycleWorkspace { .. }
                             | Command::SwapSplit
+                            | Command::SplitRecent
+                            | Command::Unsplit
                             | Command::CopyUrl { .. }
                             | Command::RestoreClosedTab
                             | Command::SleepInactiveTabs
@@ -1316,6 +1321,7 @@ fn build_chrome_views(
                 | Command::SwapSplit
                 | Command::CopyUrl { .. }
                 | Command::Unsplit
+                | Command::SplitRecent
                 | Command::CycleWorkspace { .. }
                 | Command::CreateFolder { .. }
                 | Command::ToggleReader
@@ -1766,7 +1772,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         | Command::ReorderTab { .. } | Command::RenameWorkspace { .. } | Command::SetWorkspaceEmoji { .. } | Command::DeleteWorkspace { .. } | Command::ToggleMute { .. }
                         | Command::DismissUpdate { .. }
                         | Command::ToggleBookmark { .. } | Command::NewPrivateTab
-                        | Command::SplitTab { .. } | Command::SwapSplit | Command::Unsplit
+                        | Command::SplitTab { .. } | Command::SwapSplit | Command::Unsplit | Command::SplitRecent
                         | Command::OpenInSidePanel { .. } | Command::ToggleSidePanel));
                 match event {
                     UserEvent::Audio(id, generation, playing, muted) => {
@@ -2132,6 +2138,12 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 }
                             },
                             Command::Unsplit => { state.split = None; palette_open = false; },
+                            Command::SplitRecent => {
+                                palette_open = false;
+                                if !state.split_with_recent() {
+                                    let _ = sidebar.evaluate_script("window.showToast?.('Open another tab in this workspace to split with')");
+                                }
+                            },
                             Command::OpenInSidePanel { id } => { state.open_in_side_panel(id); },
                             Command::ToggleSidePanel => { state.side_panel_open = !state.side_panel_open && state.side_panel_url.is_some(); palette_open = false; },
                             Command::ToggleEssential { id } => {

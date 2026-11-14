@@ -906,7 +906,7 @@ pub fn attach(
         view.controller().add_AcceleratorKeyPressed(
             &AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
                 use windows::Win32::UI::Input::KeyboardAndMouse::{
-                    GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_ESCAPE, VK_MENU, VK_SHIFT,
+                    GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_ESCAPE, VK_MENU, VK_RMENU, VK_SHIFT,
                 };
                 let Some(args) = args else { return Ok(()) };
                 let mut kind = COREWEBVIEW2_KEY_EVENT_KIND::default();
@@ -919,9 +919,14 @@ pub fn attach(
                 let mut key = 0;
                 args.VirtualKey(&mut key)?;
                 let down = |key: VIRTUAL_KEY| GetKeyState(i32::from(key.0)) < 0;
-                if let Some(command) =
-                    crate::app::shortcut(key, down(VK_CONTROL), down(VK_SHIFT), down(VK_MENU))
-                {
+                let ctrl = down(VK_CONTROL);
+                // AltGr arrives as Ctrl + right Alt. It types characters such as @ and € on many
+                // layouts, so it must never trigger a Ctrl+Alt shortcut.
+                let alt_gr = ctrl && down(VK_RMENU);
+                let command = (!alt_gr)
+                    .then(|| crate::app::shortcut(key, ctrl, down(VK_SHIFT), down(VK_MENU)))
+                    .flatten();
+                if let Some(command) = command {
                     args.SetHandled(true)?;
                     let mut status = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
                     args.PhysicalKeyStatus(&mut status)?;

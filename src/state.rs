@@ -1380,6 +1380,19 @@ impl BrowserState {
         true
     }
 
+    /// Splits the active tab with the most recently used other tab in this workspace.
+    pub fn split_with_recent(&mut self) -> bool {
+        let active = self.active_tab_id;
+        let order = self.sidebar_order();
+        let recent = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.id != active && order.contains(&tab.id))
+            .max_by_key(|tab| tab.last_active)
+            .map(|tab| tab.id);
+        recent.is_some_and(|id| self.split_with(id))
+    }
+
     /// The split pair while one of its tabs is active, dropping a pair that no longer fits.
     pub fn split_pair(&mut self) -> Option<[usize; 2]> {
         let pair = self.split?;
