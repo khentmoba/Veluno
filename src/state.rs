@@ -1000,6 +1000,13 @@ impl BrowserState {
     }
 
     /// Unloads an Essential or Pinned tab (resets to its pinned URL and sleeps it, switching away if active).
+    /// Ctrl+W on a pinned tab or Essential resets and unloads it instead of closing it, like Zen.
+    pub fn close_shortcut_unloads(&self, tab_id: usize) -> bool {
+        self.tabs
+            .iter()
+            .any(|tab| tab.id == tab_id && (tab.is_pinned || tab.is_essential))
+    }
+
     pub fn unload_tab(&mut self, tab_id: usize) -> bool {
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
             return false;

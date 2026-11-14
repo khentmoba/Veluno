@@ -897,3 +897,24 @@ fn number_shortcuts_follow_the_sidebar_order() {
     assert!(state.select_tab_position(8).is_none());
     assert_eq!(state.cycle_tab(false).unwrap().id, essential);
 }
+
+#[test]
+fn close_shortcut_unloads_pinned_tabs_instead_of_closing_them() {
+    let mut state = BrowserState::new();
+    let pinned = state.add_tab(Some("https://mail.example".into()), false);
+    state.toggle_pin(pinned);
+    state
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.id == pinned)
+        .unwrap()
+        .url = "https://mail.example/inbox/42".into();
+    assert!(state.close_shortcut_unloads(pinned));
+    assert!(!state.close_shortcut_unloads(1));
+    state.switch_tab(pinned);
+    state.unload_tab(pinned);
+    let tab = state.tabs.iter().find(|tab| tab.id == pinned).unwrap();
+    assert!(tab.is_sleeping);
+    assert_eq!(tab.url, "https://mail.example/");
+    assert_eq!(state.active_tab_id, 1);
+}

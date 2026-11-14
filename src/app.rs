@@ -2029,7 +2029,15 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                     state.update_status = Some("This tab has an active download. Finish or cancel it in Downloads before closing.".into());
                                 }
                             },
-                            Command::CloseActiveTab => { let _ = proxy.send_event(UserEvent::Command(Command::CloseTab { id: state.active_tab_id })); },
+                            Command::CloseActiveTab => {
+                                let id = state.active_tab_id;
+                                if state.close_shortcut_unloads(id) && downloads.get(&id).copied().unwrap_or(0) == 0 {
+                                    state.unload_tab(id);
+                                    let _ = sidebar.evaluate_script("window.showToast?.('Pinned tab reset and unloaded')");
+                                } else {
+                                    let _ = proxy.send_event(UserEvent::Command(Command::CloseTab { id }));
+                                }
+                            },
                             Command::ToggleSleep { id } => { if downloads.get(&id).copied().unwrap_or(0) == 0 { state.toggle_sleep(id); } },
                             Command::SleepInactiveTabs => { state.sleep_inactive_tabs(); for tab in &mut state.tabs { if downloads.get(&tab.id).copied().unwrap_or(0) > 0 { tab.is_sleeping = false; } } },
                             Command::ClearUnpinnedTabs => {
