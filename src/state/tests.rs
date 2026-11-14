@@ -928,6 +928,18 @@ fn split_shortcut_pairs_the_active_tab_with_the_last_one_used() {
     state.switch_tab(older);
     state.switch_tab(recent);
     state.switch_tab(active);
+    let elsewhere = state.add_tab(Some("https://d.example".into()), false);
+    state.switch_tab(elsewhere);
+    state.toggle_essential(elsewhere).unwrap();
+    state.create_profile("School").unwrap();
+    let school = state.active_workspace_id;
+    state
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.id == elsewhere)
+        .unwrap()
+        .workspace_id = school;
+    state.switch_tab(active);
     assert!(state.split_with_recent());
     assert_eq!(state.split, Some([active, recent]));
 

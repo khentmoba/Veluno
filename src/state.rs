@@ -1383,11 +1383,13 @@ impl BrowserState {
     /// Splits the active tab with the most recently used other tab in this workspace.
     pub fn split_with_recent(&mut self) -> bool {
         let active = self.active_tab_id;
-        let order = self.sidebar_order();
+        let Some(workspace) = self.active_tab().map(|tab| tab.workspace_id) else {
+            return false;
+        };
         let recent = self
             .tabs
             .iter()
-            .filter(|tab| tab.id != active && order.contains(&tab.id))
+            .filter(|tab| tab.id != active && tab.workspace_id == workspace)
             .max_by_key(|tab| tab.last_active)
             .map(|tab| tab.id);
         recent.is_some_and(|id| self.split_with(id))
