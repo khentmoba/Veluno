@@ -208,6 +208,7 @@
       else if (key === '=' || key === '+') { action = 'zoom'; payload = { delta: 10 }; }
       else if (key === '-' || key === '_') { action = 'zoom'; payload = { delta: -10 }; }
       else if (key === '0' && !event.shiftKey) { action = 'zoom'; payload = { delta: 0 }; }
+      else if (/^[1-9]$/.test(key) && !event.shiftKey) { action = 'select_tab'; payload = { position: Number(key) }; }
     } else if (event.altKey && !event.ctrlKey && !event.shiftKey && !event.metaKey) {
       if (key === 'arrowleft') action = 'back';
       else if (key === 'arrowright') action = 'forward';

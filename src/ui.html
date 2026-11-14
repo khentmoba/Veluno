@@ -981,6 +981,7 @@ window.updateState = state => {
  currentState=state;
  const tabIds=new Set(state.tabs.map(tab=>tab.id));
  if(previous.tabs.some(tab=>!tabIds.has(tab.id)&&(state.closed_tabs||[]).some(closed=>closed.id===tab.id))) showToast('Tab closed',true);
+ slideWorkspace(previous,state);
  syncCollapsed();
 
  $('btn-toggle-sidebar').setAttribute('aria-expanded',String(!state.sidebar_collapsed));
@@ -1183,13 +1184,40 @@ $('btn-workspace-header').onclick=()=>{
 };
 $('btn-new-folder').onclick=()=>Veluno.send('create_folder',{name:'New Folder'});
 
-// Workspace horizontal wheel cycling just like Zen
+// Switch workspaces by scrolling the footer strip or swiping sideways over the tabs, like Zen.
+// Trackpads send a burst of small wheel events, so deltas add up to one step with a short cooldown.
+let swipeTotal=0, swipeUntil=0, swipeReset=0;
+function swipeWorkspace(delta) {
+ const now=performance.now();
+ if(now<swipeUntil) return;
+ clearTimeout(swipeReset);
+ swipeReset=setTimeout(()=>{ swipeTotal=0; },180);
+ swipeTotal+=delta;
+ if(Math.abs(swipeTotal)<60) return;
+ Veluno.send('cycle_workspace',{forward:swipeTotal>0});
+ swipeTotal=0; swipeUntil=now+420;
+}
 $('workspace-strip').addEventListener('wheel',e=>{
- if(Math.abs(e.deltaY)>0||Math.abs(e.deltaX)>0) {
-  e.preventDefault();
-  Veluno.send('cycle_workspace',{forward:(e.deltaY+e.deltaX)>0});
- }
+ e.preventDefault();
+ swipeWorkspace(Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY);
 },{passive:false});
+document.querySelector('section.tabs').addEventListener('wheel',e=>{
+ if(Math.abs(e.deltaX)<=Math.abs(e.deltaY)*1.5) return;
+ e.preventDefault();
+ swipeWorkspace(e.deltaX);
+},{passive:false});
+
+// Slide the tab list in from the side the new workspace sits on.
+function slideWorkspace(previous,state) {
+ if(reducedMotion.matches||!previous.workspaces?.length||previous.active_workspace_id===state.active_workspace_id) return;
+ const order=id=>state.workspaces.findIndex(w=>w.id===id);
+ const from=order(previous.active_workspace_id), to=order(state.active_workspace_id);
+ if(from<0||to<0) return;
+ const x=to>from?28:-28;
+ for(const el of [document.querySelector('section.tabs'),$('workspace-indicator')]) {
+  el?.animate([{transform:`translateX(${x}px)`,opacity:0},{transform:'none',opacity:1}],{duration:240,easing:'cubic-bezier(.2,.8,.2,1)'});
+ }
+}
 
 // Drag-to-resize sidebar splitter
 const splitter=$('sidebar-splitter');

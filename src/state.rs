@@ -1284,13 +1284,67 @@ impl BrowserState {
         }
     }
 
-    pub fn cycle_tab(&mut self, backwards: bool) -> Option<&Tab> {
-        let ids: Vec<usize> = self
+    /// Tab ids in the order the sidebar shows them: Essentials, then pinned and regular groups,
+    /// each with its folders first and loose tabs after.
+    pub fn sidebar_order(&self) -> Vec<usize> {
+        let workspace = self.active_workspace_id;
+        let private = self.private_workspace() == Some(workspace);
+        let mut ids: Vec<usize> = if private {
+            Vec::new()
+        } else {
+            self.tabs
+                .iter()
+                .filter(|tab| tab.is_essential)
+                .map(|tab| tab.id)
+                .collect()
+        };
+        let tabs: Vec<&Tab> = self
             .tabs
             .iter()
-            .filter(|tab| tab.workspace_id == self.active_workspace_id)
-            .map(|tab| tab.id)
+            .filter(|tab| !tab.is_essential && tab.workspace_id == workspace)
             .collect();
+        for pinned in [true, false] {
+            let group: Vec<&&Tab> = tabs.iter().filter(|tab| tab.is_pinned == pinned).collect();
+            let folders: Vec<usize> = self
+                .folders
+                .iter()
+                .filter(|folder| folder.workspace_id == workspace && folder.is_pinned == pinned)
+                .map(|folder| folder.id)
+                .collect();
+            for folder in &folders {
+                ids.extend(
+                    group
+                        .iter()
+                        .filter(|tab| tab.folder_id == Some(*folder))
+                        .map(|tab| tab.id),
+                );
+            }
+            ids.extend(
+                group
+                    .iter()
+                    .filter(|tab| {
+                        !tab.folder_id
+                            .is_some_and(|folder| folders.contains(&folder))
+                    })
+                    .map(|tab| tab.id),
+            );
+        }
+        ids
+    }
+
+    /// Ctrl+1 to Ctrl+8 pick that tab in sidebar order; Ctrl+9 picks the last one.
+    pub fn select_tab_position(&mut self, position: usize) -> Option<&Tab> {
+        let ids = self.sidebar_order();
+        let id = match position {
+            9 => ids.last().copied(),
+            1..=8 => ids.get(position - 1).copied(),
+            _ => None,
+        }?;
+        self.switch_tab(id)
+    }
+
+    pub fn cycle_tab(&mut self, backwards: bool) -> Option<&Tab> {
+        let ids = self.sidebar_order();
         let index = ids.iter().position(|id| *id == self.active_tab_id)?;
         let next = if backwards {
             (index + ids.len() - 1) % ids.len()

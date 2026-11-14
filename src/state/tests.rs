@@ -877,3 +877,23 @@ fn workspace_reordering_themes_and_split_swap_persist_cleanly() {
     assert!(state.toggle_rail());
     assert!(!state.sidebar_collapsed);
 }
+
+#[test]
+fn number_shortcuts_follow_the_sidebar_order() {
+    let mut state = BrowserState::new();
+    let loose = state.add_tab(Some("https://a.example".into()), false);
+    let foldered = state.add_tab(Some("https://b.example".into()), false);
+    let pinned = state.add_tab(Some("https://c.example".into()), false);
+    let essential = state.add_tab(Some("https://d.example".into()), false);
+    state.toggle_pin(pinned);
+    state.toggle_essential(essential).unwrap();
+    state.create_folder("Read", Some(foldered), false).unwrap();
+    assert_eq!(
+        state.sidebar_order(),
+        vec![essential, pinned, foldered, 1, loose]
+    );
+    assert_eq!(state.select_tab_position(2).unwrap().id, pinned);
+    assert_eq!(state.select_tab_position(9).unwrap().id, loose);
+    assert!(state.select_tab_position(8).is_none());
+    assert_eq!(state.cycle_tab(false).unwrap().id, essential);
+}

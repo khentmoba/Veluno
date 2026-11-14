@@ -139,7 +139,8 @@ assert.deepEqual(press('T', { ctrlKey: true, shiftKey: true }), { action: 'resto
 assert.deepEqual(press('S', { ctrlKey: true, shiftKey: true }), { action: 'sleep_inactive_tabs' });
 assert.deepEqual(press('t', { ctrlKey: true }), { action: 'new_tab' });
 assert.deepEqual(press('k', { ctrlKey: true }), { action: 'open_command_palette' });
-assert.deepEqual(press('C', { ctrlKey: true, shiftKey: true }), { action: 'copy_url' });assert.deepEqual(press('\\', { ctrlKey: true, shiftKey: true }), { action: 'swap_split' });
+assert.deepEqual(press('C', { ctrlKey: true, shiftKey: true }), { action: 'copy_url' });
+assert.deepEqual(press('\\', { ctrlKey: true, shiftKey: true }), { action: 'swap_split' });
 assert.deepEqual(press('B', { ctrlKey: true, shiftKey: true }), { action: 'toggle_sidebar' });
 assert.deepEqual(press('N', { ctrlKey: true, shiftKey: true }), { action: 'new_private_tab' });
 assert.deepEqual(press('d', { ctrlKey: true }), { action: 'toggle_bookmark' });
@@ -152,6 +153,8 @@ assert.deepEqual(press('Tab', { ctrlKey: true, shiftKey: true }), { action: 'cyc
 assert.deepEqual(press('Tab', { ctrlKey: true, shiftKey: false }), { action: 'cycle_tab', backwards: false });
 assert.deepEqual(press('PageDown', { ctrlKey: true }), { action: 'cycle_tab', backwards: false });
 assert.deepEqual(press('PageUp', { ctrlKey: true }), { action: 'cycle_tab', backwards: true });
+assert.deepEqual(press('3', { ctrlKey: true }), { action: 'select_tab', position: 3 });
+assert.deepEqual(press('9', { ctrlKey: true }), { action: 'select_tab', position: 9 });
 assert.deepEqual(press('=', { ctrlKey: true }), { action: 'zoom', delta: 10 });
 assert.deepEqual(press('-', { ctrlKey: true }), { action: 'zoom', delta: -10 });
 assert.deepEqual(press('0', { ctrlKey: true }), { action: 'zoom', delta: 0 });

@@ -136,6 +136,9 @@ pub enum Command {
         id: usize,
     },
     SwapSplit,
+    SelectTab {
+        position: usize,
+    },
     CopyUrl {
         #[serde(default)]
         markdown: bool,
@@ -321,6 +324,9 @@ pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command>
             (_, 0xBB | 0x6B, _) => Command::Zoom { delta: 10 },
             (_, 0xBD | 0x6D, _) => Command::Zoom { delta: -10 },
             (Some('0'), _, false) | (_, 0x60, false) => Command::Zoom { delta: 0 },
+            (Some(digit @ '1'..='9'), _, false) => Command::SelectTab {
+                position: digit as usize - '0' as usize,
+            },
             _ => return None,
         },
         (true, true) if shift => match letter {
@@ -976,6 +982,7 @@ fn content(
                             | Command::RestoreClosedTab
                             | Command::SleepInactiveTabs
                             | Command::CycleTab { .. }
+                            | Command::SelectTab { .. }
                             | Command::SwitchProfile { .. }
                             | Command::ToggleDownloads
                             | Command::OpenHistory
@@ -1753,7 +1760,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                         | Command::TogglePin { .. } | Command::ToggleEssential { .. } | Command::UnloadTab { .. } | Command::ResetPinnedUrl { .. } | Command::RenameTab { .. }
                         | Command::CreateFolder { .. } | Command::RenameFolder { .. } | Command::ToggleFolder { .. } | Command::DeleteFolder { .. } | Command::MoveTabToFolder { .. }
                         | Command::ReorderWorkspace { .. } | Command::SetWorkspaceAccent { .. } | Command::ToggleWorkspacePins { .. }
-                        | Command::CycleTab { .. } | Command::FocusAddress
+                        | Command::CycleTab { .. } | Command::SelectTab { .. } | Command::FocusAddress
                         | Command::OpenSettings { .. } | Command::OpenHistory | Command::ImportBookmarks { .. } | Command::DuplicateTab { .. }
                         | Command::MoveTabToWorkspace { .. } | Command::ExpandPopup { .. }
                         | Command::ReorderTab { .. } | Command::RenameWorkspace { .. } | Command::SetWorkspaceEmoji { .. } | Command::DeleteWorkspace { .. } | Command::ToggleMute { .. }
@@ -2223,6 +2230,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                     }
                             },
                             Command::CycleTab { backwards } => { state.cycle_tab(backwards); },
+                            Command::SelectTab { position } => { state.select_tab_position(position); },
                             Command::FocusAddress => { state.sidebar_collapsed = false; focus_address = true; },
                             Command::AddressSuggestions => {
                                 if let Ok(json) = serde_json::to_string(&history::all()) {

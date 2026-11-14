@@ -93,6 +93,10 @@ fn shortcuts_map_virtual_keys_and_leave_page_keys_alone() {
         "Some(CopyUrl { markdown: true })"
     );
     assert_eq!(
+        action(0x33, true, false, false),
+        "Some(SelectTab { position: 3 })"
+    );
+    assert_eq!(
         action(0x2E, true, true, false),
         "Some(OpenSettings { section: Some(\"privacy\") })"
     );
