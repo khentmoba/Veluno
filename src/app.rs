@@ -135,11 +135,75 @@ pub enum Command {
     SplitTab {
         id: usize,
     },
+    SwapSplit,
+    SelectTab {
+        position: usize,
+    },
+    CopyUrl {
+        #[serde(default)]
+        markdown: bool,
+    },
     OpenInSidePanel {
         id: usize,
     },
     ToggleSidePanel,
     Unsplit,
+    SplitRecent,
+    ToggleEssential {
+        id: usize,
+    },
+    UnloadTab {
+        id: usize,
+    },
+    ResetPinnedUrl {
+        id: usize,
+    },
+    RenameTab {
+        id: usize,
+        title: String,
+    },
+    CreateFolder {
+        name: String,
+        tab_id: Option<usize>,
+        is_pinned: Option<bool>,
+    },
+    RenameFolder {
+        id: usize,
+        name: String,
+    },
+    ToggleFolder {
+        id: usize,
+    },
+    DeleteFolder {
+        id: usize,
+    },
+    MoveTabToFolder {
+        id: usize,
+        folder_id: Option<usize>,
+    },
+    ReorderWorkspace {
+        id: usize,
+        index: usize,
+    },
+    SetWorkspaceAccent {
+        id: usize,
+        accent: String,
+    },
+    ToggleWorkspacePins {
+        id: usize,
+    },
+    CycleWorkspace {
+        forward: bool,
+    },
+    ToggleRail,
+    ResizeSidebar {
+        width: f64,
+        commit: Option<bool>,
+    },
+    MediaPlayPause {
+        id: usize,
+    },
+    OpenCommandPalette,
     Glance {
         url: String,
     },
@@ -210,6 +274,28 @@ pub enum Command {
     NewPrivateTab,
 }
 
+/// The text Copy URL puts on the clipboard: the address, or a Markdown link to it.
+pub fn copied_url_text(title: &str, url: &str, markdown: bool) -> String {
+    if !markdown {
+        return url.to_string();
+    }
+    let title = title.trim();
+    let label = if title.is_empty() { url } else { title };
+    let label: String = label
+        .chars()
+        .flat_map(|c| match c {
+            '[' | ']' | '\\' => vec!['\\', c],
+            '\n' | '\r' => vec![' '],
+            _ => vec![c],
+        })
+        .collect();
+    let target = url
+        .replace('(', "%28")
+        .replace(')', "%29")
+        .replace(' ', "%20");
+    format!("[{label}]({target})")
+}
+
 /// Browser shortcuts by Windows virtual-key code, matched before the page sees the key.
 pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command> {
     let letter = char::from_u32(key).filter(char::is_ascii_alphanumeric);
@@ -217,6 +303,8 @@ pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command>
         (true, false) => match (letter, key, shift) {
             (Some('T'), ..) if shift => Command::RestoreClosedTab,
             (Some('T'), ..) => Command::NewTab { url: None },
+            (Some('K'), _, false) => Command::OpenCommandPalette,
+            (Some('C'), _, true) => Command::CopyUrl { markdown: false },
             (Some('B'), _, true) => Command::ToggleSidebar,
             (Some('S'), _, true) => Command::SleepInactiveTabs,
             (Some('N'), _, true) => Command::NewPrivateTab,
@@ -230,12 +318,29 @@ pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command>
             (_, 0x09, _) => Command::CycleTab { backwards: shift },
             (_, 0x21, _) => Command::CycleTab { backwards: true },
             (_, 0x22, _) => Command::CycleTab { backwards: false },
+            (_, 0xDC, true) => Command::SwapSplit,
             (_, 0x2E, true) => Command::OpenSettings {
                 section: Some("privacy".into()),
             },
             (_, 0xBB | 0x6B, _) => Command::Zoom { delta: 10 },
             (_, 0xBD | 0x6D, _) => Command::Zoom { delta: -10 },
             (Some('0'), _, false) | (_, 0x60, false) => Command::Zoom { delta: 0 },
+            (Some(digit @ '1'..='9'), _, false) => Command::SelectTab {
+                position: digit as usize - '0' as usize,
+            },
+            _ => return None,
+        },
+        (true, true) if shift => match letter {
+            Some('C') => Command::CopyUrl { markdown: true },
+            _ => return None,
+        },
+        (true, true) if !shift => match letter {
+            Some('C') => Command::ToggleSidebar,
+            Some('R') => Command::ToggleRail,
+            Some('Q') => Command::CycleWorkspace { forward: false },
+            Some('E') => Command::CycleWorkspace { forward: true },
+            Some('V') => Command::SplitRecent,
+            Some('U') => Command::Unsplit,
             _ => return None,
         },
         (false, true) if !shift => match (letter, key) {
@@ -362,9 +467,17 @@ impl PaletteShown {
     }
 }
 
-fn bounds(window: &Window, reveal: f64, dock: f64, top: f64) -> (Rect, Rect, Rect, Rect) {
+fn bounds(
+    window: &Window,
+    sidebar_width: f64,
+    rail_progress: f64,
+    reveal: f64,
+    dock: f64,
+    top: f64,
+) -> (Rect, Rect, Rect, Rect) {
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
-    let full = ui::SIDEBAR_WIDTH_EXPANDED;
+    let expanded = sidebar_width.clamp(200., 380.);
+    let full = expanded + (ui::SIDEBAR_WIDTH_RAIL - expanded) * rail_progress;
     let hot = ui::SIDEBAR_HOT_ZONE;
     let right = settings::sidebar_right();
     let pushed = full * dock;
@@ -766,8 +879,23 @@ fn content(
     let popup_host = popup_host.clone();
     let navigation = proxy.clone();
     let initial_dock = if state.sidebar_collapsed { 0. } else { 1. };
+    let initial_rail = if state.sidebar_rail && !state.sidebar_collapsed {
+        1.
+    } else {
+        0.
+    };
     let mut builder = WebViewBuilder::new_with_web_context(context)
-        .with_bounds(bounds(window, initial_dock, initial_dock, 0.).1)
+        .with_bounds(
+            bounds(
+                window,
+                state.sidebar_width,
+                initial_rail,
+                initial_dock,
+                initial_dock,
+                0.,
+            )
+            .1,
+        )
         .with_visible(false)
         .with_focused(false)
         .with_incognito(private)
@@ -846,12 +974,20 @@ fn content(
                             | Command::ReloadFresh
                             | Command::Stop
                             | Command::NewTab { .. }
+                            | Command::OpenCommandPalette
                             | Command::CloseActiveTab
                             | Command::FocusAddress
                             | Command::ToggleSidebar
+                            | Command::ToggleRail
+                            | Command::CycleWorkspace { .. }
+                            | Command::SwapSplit
+                            | Command::SplitRecent
+                            | Command::Unsplit
+                            | Command::CopyUrl { .. }
                             | Command::RestoreClosedTab
                             | Command::SleepInactiveTabs
                             | Command::CycleTab { .. }
+                            | Command::SelectTab { .. }
                             | Command::SwitchProfile { .. }
                             | Command::ToggleDownloads
                             | Command::OpenHistory
@@ -1113,7 +1249,19 @@ fn build_chrome_views(
     let ui_proxy = proxy.clone();
     let ready = proxy.clone();
     let initial_dock = if state.sidebar_collapsed { 0. } else { 1. };
-    let initial_bounds = bounds(window, initial_dock, initial_dock, 0.);
+    let initial_rail = if state.sidebar_rail && !state.sidebar_collapsed {
+        1.
+    } else {
+        0.
+    };
+    let initial_bounds = bounds(
+        window,
+        state.sidebar_width,
+        initial_rail,
+        initial_dock,
+        initial_dock,
+        0.,
+    );
     let mut sidebar_builder = WebViewBuilder::new_with_web_context(chrome_context)
         .with_bounds(initial_bounds.0)
         .with_html(ui::get_ui_html())
@@ -1160,7 +1308,28 @@ fn build_chrome_views(
             if let Ok(
                 command @ (Command::SubmitNewTab { .. }
                 | Command::DismissNewTab
-                | Command::SwitchTab { .. }),
+                | Command::SwitchTab { .. }
+                | Command::NewPrivateTab
+                | Command::ToggleSidebar
+                | Command::ToggleRail
+                | Command::SleepInactiveTabs
+                | Command::ToggleDownloads
+                | Command::OpenHistory
+                | Command::OpenSettings { .. }
+                | Command::ToggleSidePanel
+                | Command::SplitTab { .. }
+                | Command::SwapSplit
+                | Command::CopyUrl { .. }
+                | Command::Unsplit
+                | Command::SplitRecent
+                | Command::CycleWorkspace { .. }
+                | Command::CreateFolder { .. }
+                | Command::ToggleReader
+                | Command::ReloadFresh
+                | Command::ToggleFullscreen
+                | Command::TogglePin { .. }
+                | Command::ToggleEssential { .. }
+                | Command::ToggleMute { .. }),
             ) = serde_json::from_str::<Command>(request.body())
             {
                 let _ = palette_proxy.send_event(UserEvent::Command(command));
@@ -1381,7 +1550,14 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             }
         }
     });
-    state.sidebar_collapsed = !headless;
+    let current_settings = settings::get();
+    state.sidebar_width = settings::sidebar_width();
+    state.sidebar_rail = current_settings.sidebar_rail;
+    state.workspace_themes = current_settings.workspace_themes;
+    state.essentials_glow = current_settings.essentials_glow;
+    if headless {
+        state.sidebar_collapsed = false;
+    }
     state.sidebar_peek = false;
     state.is_default_browser = desktop::is_default_browser();
     for url in urls {
@@ -1405,6 +1581,11 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut popup_loading = false;
     let mut dock_progress = if state.sidebar_collapsed { 0. } else { 1. };
     let mut reveal_progress = dock_progress;
+    let mut rail_progress = if state.sidebar_rail && !state.sidebar_collapsed {
+        1.
+    } else {
+        0.
+    };
     let mut top_progress = 0.;
     let mut panel_progress = if state.side_panel_open && state.side_panel_url.is_some() {
         1.
@@ -1448,6 +1629,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
     let mut palette_shown = PaletteShown::new();
     let mut palette_placed: Option<Rect> = None;
     let mut palette_needs_open = false;
+    let mut palette_seed = String::new();
     let mut visible_id = None;
     let mut placed: HashMap<usize, Rect> = HashMap::new();
     let mut panel: Option<(WebView, String)> = None;
@@ -1580,14 +1762,17 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                     | UserEvent::Command(Command::Navigate { .. } | Command::NewTab { url: Some(_) }
                         | Command::SubmitNewTab { .. } | Command::SwitchTab { .. } | Command::CloseTab { .. }
                         | Command::ToggleSleep { .. } | Command::SleepInactiveTabs | Command::ClearUnpinnedTabs
-                        | Command::ToggleSidebar | Command::SwitchWorkspace { .. } | Command::SwitchProfile { .. } | Command::CreateProfile { .. } | Command::RestoreClosedTab
-                        | Command::TogglePin { .. } | Command::CycleTab { .. } | Command::FocusAddress
+                        | Command::ToggleSidebar | Command::ToggleRail | Command::SwitchWorkspace { .. } | Command::SwitchProfile { .. } | Command::CycleWorkspace { .. } | Command::CreateProfile { .. } | Command::RestoreClosedTab
+                        | Command::TogglePin { .. } | Command::ToggleEssential { .. } | Command::UnloadTab { .. } | Command::ResetPinnedUrl { .. } | Command::RenameTab { .. }
+                        | Command::CreateFolder { .. } | Command::RenameFolder { .. } | Command::ToggleFolder { .. } | Command::DeleteFolder { .. } | Command::MoveTabToFolder { .. }
+                        | Command::ReorderWorkspace { .. } | Command::SetWorkspaceAccent { .. } | Command::ToggleWorkspacePins { .. }
+                        | Command::CycleTab { .. } | Command::SelectTab { .. } | Command::FocusAddress
                         | Command::OpenSettings { .. } | Command::OpenHistory | Command::ImportBookmarks { .. } | Command::DuplicateTab { .. }
                         | Command::MoveTabToWorkspace { .. } | Command::ExpandPopup { .. }
                         | Command::ReorderTab { .. } | Command::RenameWorkspace { .. } | Command::SetWorkspaceEmoji { .. } | Command::DeleteWorkspace { .. } | Command::ToggleMute { .. }
                         | Command::DismissUpdate { .. }
                         | Command::ToggleBookmark { .. } | Command::NewPrivateTab
-                        | Command::SplitTab { .. } | Command::Unsplit
+                        | Command::SplitTab { .. } | Command::SwapSplit | Command::Unsplit | Command::SplitRecent
                         | Command::OpenInSidePanel { .. } | Command::ToggleSidePanel));
                 match event {
                     UserEvent::Audio(id, generation, playing, muted) => {
@@ -1829,7 +2014,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             Command::ResourceLoadFailed { .. } => {},
                             Command::Stop => { if let Some(view) = views.get(&state.active_tab_id) { let _ = view.evaluate_script("window.stop()"); }
                                 if let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == state.active_tab_id) { tab.is_loading = false; } },
-                            Command::NewTab { url: None } => { palette_open = true; palette_needs_open = true; },
+                            Command::NewTab { url: None } => { palette_seed.clear(); palette_open = true; palette_needs_open = true; },
+                            Command::OpenCommandPalette => { palette_seed = "> ".into(); palette_open = true; palette_needs_open = true; },
                             Command::NewTab { url: Some(url) } | Command::SubmitNewTab { url } => if profile::allowed_url(&url) { state.add_tab(Some(url), false); palette_open = false; },
                             Command::DismissNewTab => { palette_open = false; if !headless && let Some(view) = views.get(&state.active_tab_id) { let _ = view.focus(); } },
                             Command::SwitchTab { id } => { state.switch_tab(id); palette_open = false; },
@@ -1849,17 +2035,48 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                     state.update_status = Some("This tab has an active download. Finish or cancel it in Downloads before closing.".into());
                                 }
                             },
-                            Command::CloseActiveTab => { let _ = proxy.send_event(UserEvent::Command(Command::CloseTab { id: state.active_tab_id })); },
+                            Command::CloseActiveTab => {
+                                let id = state.active_tab_id;
+                                if state.close_shortcut_unloads(id) && downloads.get(&id).copied().unwrap_or(0) == 0 {
+                                    state.unload_tab(id);
+                                    let _ = sidebar.evaluate_script("window.showToast?.('Pinned tab reset and unloaded')");
+                                } else {
+                                    let _ = proxy.send_event(UserEvent::Command(Command::CloseTab { id }));
+                                }
+                            },
                             Command::ToggleSleep { id } => { if downloads.get(&id).copied().unwrap_or(0) == 0 { state.toggle_sleep(id); } },
                             Command::SleepInactiveTabs => { state.sleep_inactive_tabs(); for tab in &mut state.tabs { if downloads.get(&tab.id).copied().unwrap_or(0) > 0 { tab.is_sleeping = false; } } },
                             Command::ClearUnpinnedTabs => {
                                 let active = state.active_tab_id;
-                                let ids: Vec<_> = state.tabs.iter().filter(|tab| tab.id != active && tab.workspace_id == state.active_workspace_id && !tab.is_pinned && downloads.get(&tab.id).copied().unwrap_or(0) == 0).map(|tab| tab.id).collect();
+                                let ids: Vec<_> = state.tabs.iter().filter(|tab| tab.id != active && tab.workspace_id == state.active_workspace_id && !tab.is_pinned && !tab.is_essential && downloads.get(&tab.id).copied().unwrap_or(0) == 0).map(|tab| tab.id).collect();
                                 for id in ids { state.close_tab(id); }
                             },
                             Command::CloseOtherTabs { id } => { state.close_other_tabs(id); },
                             Command::CloseTabsBelow { id } => { state.close_tabs_below(id); },
-                            Command::ToggleSidebar => { state.toggle_sidebar(); },
+                            Command::ToggleSidebar => { state.toggle_sidebar(); palette_open = false; },
+                            Command::ToggleRail => {
+                                let rail = state.toggle_rail();
+                                let _ = settings::set("sidebar_rail", &serde_json::Value::Bool(rail));
+                                palette_open = false;
+                            },
+                            Command::ResizeSidebar { width, commit } => {
+                                if width.is_finite() {
+                                    let clamped = width.clamp(200.0, 380.0);
+                                    state.sidebar_width = clamped;
+                                    if commit == Some(true)
+                                        && let Some(num) = serde_json::Number::from_f64(clamped)
+                                    {
+                                        let _ = settings::set("sidebar_width", &serde_json::Value::Number(num));
+                                    }
+                                }
+                            },
+                            Command::MediaPlayPause { id } => {
+                                if let Some(view) = views.get(&id) {
+                                    let _ = view.evaluate_script(
+                                        "(()=>{const m=[...document.querySelectorAll('video,audio')].find(e=>!e.paused)||document.querySelector('video,audio');if(m){if(m.paused)m.play();else m.pause();}})()"
+                                    );
+                                }
+                            },
                             Command::Peek { open } => { state.sidebar_peek = open && state.sidebar_collapsed; },
                             Command::TopbarPeek { open } => { state.topbar_peek = open; },
                             Command::WindowMinimize => { window.set_minimized(true); },
@@ -1906,9 +2123,74 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                 }
                             },
                             Command::SplitTab { id } => { if state.split_with(id) { palette_open = false; } },
-                            Command::Unsplit => { state.split = None; },
+                            Command::SwapSplit => { state.swap_split(); palette_open = false; },
+                            Command::CopyUrl { markdown } => {
+                                palette_open = false;
+                                if let Some(tab) = state.active_tab() {
+                                    let title = tab.custom_title.as_deref().unwrap_or(&tab.title);
+                                    let text = copied_url_text(title, &tab.url, markdown);
+                                    let message = match desktop::set_clipboard_text(&text) {
+                                        Ok(()) if markdown => "Copied link as Markdown",
+                                        Ok(()) => "Copied current URL",
+                                        Err(_) => "Could not copy the address",
+                                    };
+                                    let _ = sidebar.evaluate_script(&format!("window.showToast?.({})", serde_json::Value::from(message)));
+                                }
+                            },
+                            Command::Unsplit => { state.split = None; palette_open = false; },
+                            Command::SplitRecent => {
+                                palette_open = false;
+                                if !state.split_with_recent() {
+                                    let _ = sidebar.evaluate_script("window.showToast?.('Open another tab in this workspace to split with')");
+                                }
+                            },
                             Command::OpenInSidePanel { id } => { state.open_in_side_panel(id); },
-                            Command::ToggleSidePanel => { state.side_panel_open = !state.side_panel_open && state.side_panel_url.is_some(); },
+                            Command::ToggleSidePanel => { state.side_panel_open = !state.side_panel_open && state.side_panel_url.is_some(); palette_open = false; },
+                            Command::ToggleEssential { id } => {
+                                if let Err(error) = state.toggle_essential(id) {
+                                    state.update_status = Some(error);
+                                }
+                                palette_open = false;
+                            },
+                            Command::UnloadTab { id } => {
+                                if downloads.get(&id).copied().unwrap_or(0) == 0 {
+                                    state.unload_tab(id);
+                                }
+                            },
+                            Command::ResetPinnedUrl { id } => {
+                                if let Some(url) = state.reset_pinned_url(id) {
+                                    if let Some(tab) = state.tabs.iter_mut().find(|tab| tab.id == id) {
+                                        tab.is_sleeping = false;
+                                        tab.is_loading = true;
+                                    }
+                                    if let Some(view) = views.get(&id) {
+                                        let _ = load(view, &state, &url);
+                                    }
+                                }
+                            },
+                            Command::RenameTab { id, title } => { state.rename_tab(id, &title); },
+                            Command::CreateFolder { name, tab_id, is_pinned } => {
+                                if let Err(error) = state.create_folder(&name, tab_id, is_pinned.unwrap_or(false)) {
+                                    state.update_status = Some(error);
+                                }
+                                palette_open = false;
+                            },
+                            Command::RenameFolder { id, name } => {
+                                if let Err(error) = state.rename_folder(id, &name) {
+                                    state.update_status = Some(error);
+                                }
+                            },
+                            Command::ToggleFolder { id } => { state.toggle_folder(id); },
+                            Command::DeleteFolder { id } => { state.delete_folder(id); },
+                            Command::MoveTabToFolder { id, folder_id } => { state.move_tab_to_folder(id, folder_id); },
+                            Command::ReorderWorkspace { id, index } => { state.reorder_workspace(id, index); },
+                            Command::SetWorkspaceAccent { id, accent } => {
+                                if let Err(error) = state.set_workspace_accent(id, &accent) {
+                                    state.update_status = Some(error);
+                                }
+                            },
+                            Command::ToggleWorkspacePins { id } => { state.toggle_workspace_pins(id); },
+                            Command::CycleWorkspace { forward } => { state.cycle_workspace(forward); palette_open = false; },
                             Command::ClosePopup => {
                                 *popup_host.view.borrow_mut() = None;
                                 popup_host.window.set_visible(false);
@@ -1968,6 +2250,7 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                     }
                             },
                             Command::CycleTab { backwards } => { state.cycle_tab(backwards); },
+                            Command::SelectTab { position } => { state.select_tab_position(position); },
                             Command::FocusAddress => { state.sidebar_collapsed = false; focus_address = true; },
                             Command::AddressSuggestions => {
                                 if let Ok(json) = serde_json::to_string(&history::all()) {
@@ -2010,6 +2293,18 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                         }
                                     } else if key == "sidebar_right" {
                                         let _ = sidebar.evaluate_script(&format!("document.body.classList.toggle('right',{})", current.sidebar_right));
+                                    } else if key == "sidebar_rail" {
+                                        state.sidebar_rail = current.sidebar_rail;
+                                        if state.sidebar_rail {
+                                            state.sidebar_collapsed = false;
+                                            state.sidebar_peek = false;
+                                        }
+                                    } else if key == "sidebar_width" {
+                                        state.sidebar_width = settings::sidebar_width();
+                                    } else if key == "workspace_themes" {
+                                        state.workspace_themes = current.workspace_themes;
+                                    } else if key == "essentials_glow" {
+                                        state.essentials_glow = current.essentials_glow;
                                     } else if key == "search_engine" {
                                         let script = ui::search_script();
                                         let _ = sidebar.evaluate_script(&script);
@@ -2034,6 +2329,10 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                                         if let Some(view) = views.get(&tab.id) { let _ = view.evaluate_script(&script); }
                                     }
                                     let _ = sidebar.evaluate_script(&format!("document.body.classList.toggle('right',{})", current.sidebar_right));
+                                    state.sidebar_width = settings::sidebar_width();
+                                    state.sidebar_rail = current.sidebar_rail;
+                                    state.workspace_themes = current.workspace_themes;
+                                    state.essentials_glow = current.essentials_glow;
                                     state.update_status = Some("Settings were reset to their defaults. Restart Veluno to apply the search engine and ad blocker everywhere.".into());
                                 },
                                 Err(error) => { state.update_status = Some(format!("Could not reset settings: {error}")); },
@@ -2303,6 +2602,11 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         } else {
             0.
         };
+        let rail_target: f64 = if state.sidebar_rail && !state.sidebar_collapsed {
+            1.
+        } else {
+            0.
+        };
         let reveal_target = dock_target.max(peek_target);
         let top_target = if state.topbar_peek { 1. } else { 0. };
         let panel_target = if state.side_panel_open
@@ -2316,12 +2620,14 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         let downloads_target = if state.downloads_open && content_fullscreen.is_none() { 1. } else { 0. };
         reveal_progress = step(reveal_progress, reveal_target, dt);
         dock_progress = step(dock_progress, dock_target, dt);
+        rail_progress = step(rail_progress, rail_target, dt);
         top_progress = step(top_progress, top_target, dt);
         panel_progress = step(panel_progress, panel_target, dt);
         downloads_progress = step(downloads_progress, downloads_target, dt);
         let was_animating = animating;
         animating = reveal_progress != reveal_target
             || dock_progress != dock_target
+            || rail_progress != rail_target
             || top_progress != top_target
             || panel_progress != panel_target
             || downloads_progress != downloads_target;
@@ -2333,6 +2639,8 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         }
         let (mut sidebar_bounds, mut content_bounds, overlay_bounds, mut topbar_bounds) = bounds(
             &window,
+            state.sidebar_width,
+            ease(rail_progress),
             ease(reveal_progress),
             ease(dock_progress),
             ease(top_progress),
@@ -2468,8 +2776,12 @@ pub fn run(args: &[String]) -> wry::Result<()> {
         }
         let downloads_visible = downloads_progress > 0.;
         if downloads_visible {
+            let expanded = state.sidebar_width.clamp(200., 380.);
+            let current_side = expanded + (ui::SIDEBAR_WIDTH_RAIL - expanded) * ease(rail_progress);
+            let pushed = current_side * ease(dock_progress);
+            let downloads_x = if settings::sidebar_right() { 0. } else { pushed };
             let downloads_rect = Rect {
-                position: Position::Logical(LogicalPosition::new(0., ui::TOPBAR_EXPANDED)),
+                position: Position::Logical(LogicalPosition::new(downloads_x, ui::TOPBAR_EXPANDED)),
                 size: Size::Logical(LogicalSize::new(
                     ui::DOWNLOADS_POPUP_WIDTH + 2. * ui::DOWNLOADS_POPUP_PAD,
                     downloads_height + 2. * ui::DOWNLOADS_POPUP_PAD,
@@ -2533,9 +2845,11 @@ pub fn run(args: &[String]) -> wry::Result<()> {
             if focus_address { if !headless { let _ = sidebar.focus(); } let _ = sidebar.evaluate_script("window.focusAddress()"); focus_address = false; }
             if palette_open && palette_needs_open {
                 let history_json = serde_json::to_string(&history::all()).unwrap_or_else(|_| "[]".into());
-                let _ = palette.evaluate_script(&format!("window.openNewTab?.({json},{history_json})"));
+                let seed_json = serde_json::to_string(&palette_seed).unwrap_or_else(|_| "\"\"".into());
+                let _ = palette.evaluate_script(&format!("window.openNewTab?.({json},{history_json},{seed_json})"));
                 if !headless { let _ = palette.focus(); }
                 palette_needs_open = false;
+                palette_seed.clear();
             }
         }
         permission_prompt.sync(&state, overlay_bounds, palette_open, headless);

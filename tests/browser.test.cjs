@@ -75,6 +75,15 @@ assert.equal(detailOf({shortcut:true,url:'http://localhost:5173/dev'}),'localhos
 assert.equal(detailOf({search:true,detail:'Search with Brave'}),'Search with Brave');
 assert.equal(detailOf({search:false,url:'https://x.com',detail:'Open in a new tab'}),'Open address');
 assert.equal(detailOf({url:'not a url'}),'');
+const progress=window.Veluno.downloadProgress;
+assert.equal(progress([]), null);
+assert.equal(progress([{ status: 'downloading', received: 10, total: 0 }]), null);
+assert.equal(progress([{ status: 'complete', received: 50, total: 50 }]), null);
+assert.equal(progress([
+  { status: 'downloading', received: 25, total: 100 },
+  { status: 'downloading', received: 300, total: 100 },
+  { status: 'complete', received: 999, total: 999 },
+]), 0.625);
 const summary=window.Veluno.downloadSummary;
 assert.equal(summary([]).label,'','an empty list has no summary');
 assert.equal(summary([{id:1,status:'complete',received:1048576}]).label,'1 file · 1.0 MB');
@@ -138,6 +147,9 @@ function press(key, modifiers = {}) {
 assert.deepEqual(press('T', { ctrlKey: true, shiftKey: true }), { action: 'restore_closed_tab' });
 assert.deepEqual(press('S', { ctrlKey: true, shiftKey: true }), { action: 'sleep_inactive_tabs' });
 assert.deepEqual(press('t', { ctrlKey: true }), { action: 'new_tab' });
+assert.deepEqual(press('k', { ctrlKey: true }), { action: 'open_command_palette' });
+assert.deepEqual(press('C', { ctrlKey: true, shiftKey: true }), { action: 'copy_url' });
+assert.deepEqual(press('\\', { ctrlKey: true, shiftKey: true }), { action: 'swap_split' });
 assert.deepEqual(press('B', { ctrlKey: true, shiftKey: true }), { action: 'toggle_sidebar' });
 assert.deepEqual(press('N', { ctrlKey: true, shiftKey: true }), { action: 'new_private_tab' });
 assert.deepEqual(press('d', { ctrlKey: true }), { action: 'toggle_bookmark' });
@@ -150,6 +162,8 @@ assert.deepEqual(press('Tab', { ctrlKey: true, shiftKey: true }), { action: 'cyc
 assert.deepEqual(press('Tab', { ctrlKey: true, shiftKey: false }), { action: 'cycle_tab', backwards: false });
 assert.deepEqual(press('PageDown', { ctrlKey: true }), { action: 'cycle_tab', backwards: false });
 assert.deepEqual(press('PageUp', { ctrlKey: true }), { action: 'cycle_tab', backwards: true });
+assert.deepEqual(press('3', { ctrlKey: true }), { action: 'select_tab', position: 3 });
+assert.deepEqual(press('9', { ctrlKey: true }), { action: 'select_tab', position: 9 });
 assert.deepEqual(press('=', { ctrlKey: true }), { action: 'zoom', delta: 10 });
 assert.deepEqual(press('-', { ctrlKey: true }), { action: 'zoom', delta: -10 });
 assert.deepEqual(press('0', { ctrlKey: true }), { action: 'zoom', delta: 0 });

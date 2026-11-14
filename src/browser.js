@@ -176,7 +176,18 @@
         : '',
     };
   }
-  window.Veluno = { send, resolveAddress, suggestions, suggestionDetail, highlight, downloadSummary, displayAddress, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
+  // Share of bytes received across running downloads with a known size, or null when nothing is measurable.
+  function downloadProgress(items = []) {
+    let received = 0, total = 0;
+    for (const item of items) {
+      const size = Number(item.total) || 0;
+      if (item.status !== 'downloading' || size <= 0) continue;
+      total += size;
+      received += Math.min(size, Math.max(0, Number(item.received) || 0));
+    }
+    return total > 0 ? received / total : null;
+  }
+  window.Veluno = { send, resolveAddress, suggestions, suggestionDetail, highlight, downloadSummary, downloadProgress, displayAddress, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
   const postShortcut = post;
   const stringify = JSON.stringify;
   window.addEventListener('keydown', event => {
@@ -186,6 +197,8 @@
     let payload = {};
     if (event.ctrlKey && !event.altKey && !event.metaKey) {
       if (key === 't') action = event.shiftKey ? 'restore_closed_tab' : 'new_tab';
+      else if (key === 'k' && !event.shiftKey) action = 'open_command_palette';
+      else if (key === 'c' && event.shiftKey) action = 'copy_url';
       else if (key === 's' && event.shiftKey) action = 'sleep_inactive_tabs';
       else if (key === 'b' && event.shiftKey) action = 'toggle_sidebar';
       else if (key === 'n' && event.shiftKey) action = 'new_private_tab';
@@ -198,6 +211,7 @@
       else if (key === 'h' && !event.shiftKey) action = 'open_history';
       else if (key === 'r') action = event.shiftKey ? 'reload_fresh' : 'reload';
       else if (key === 'f5') action = 'reload_fresh';
+      else if ((key === '\\' || key === '|') && event.shiftKey) action = 'swap_split';
       else if (key === 'delete' && event.shiftKey) { action = 'open_settings'; payload = { section: 'privacy' }; }
       else if (key === 'tab') { action = 'cycle_tab'; payload = { backwards: !!event.shiftKey }; }
       else if (key === 'pageup') { action = 'cycle_tab'; payload = { backwards: true }; }
@@ -205,6 +219,7 @@
       else if (key === '=' || key === '+') { action = 'zoom'; payload = { delta: 10 }; }
       else if (key === '-' || key === '_') { action = 'zoom'; payload = { delta: -10 }; }
       else if (key === '0' && !event.shiftKey) { action = 'zoom'; payload = { delta: 0 }; }
+      else if (/^[1-9]$/.test(key) && !event.shiftKey) { action = 'select_tab'; payload = { position: Number(key) }; }
     } else if (event.altKey && !event.ctrlKey && !event.shiftKey && !event.metaKey) {
       if (key === 'arrowleft') action = 'back';
       else if (key === 'arrowright') action = 'forward';

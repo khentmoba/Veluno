@@ -770,3 +770,180 @@ fn google_drive_shortcut_origin_points_to_drive_app() {
     assert_eq!(root_url, "https://drive.google.com/drive");
     assert_eq!(label, "Google Drive");
 }
+
+#[test]
+fn essentials_follow_regular_workspaces_and_unload_back_to_pinned_url() {
+    let mut state = BrowserState::new();
+    let work = state.create_profile("Work").unwrap();
+    state.switch_workspace(1);
+    let essential = state.add_tab(Some("https://mail.example.com".into()), false);
+    assert!(state.toggle_essential(essential).unwrap());
+    assert_eq!(
+        state
+            .tabs
+            .iter()
+            .find(|t| t.id == essential)
+            .unwrap()
+            .pinned_url
+            .as_deref(),
+        Some("https://mail.example.com/")
+    );
+    state.update_active_tab(
+        "https://mail.example.com/inbox/42".into(),
+        Some("Inbox".into()),
+    );
+    state.switch_workspace(work);
+    // Switching to an Essential keeps the user in their current regular workspace.
+    state.switch_tab(essential);
+    assert_eq!(state.active_workspace_id, work);
+    assert_eq!(
+        state
+            .tabs
+            .iter()
+            .find(|t| t.id == essential)
+            .unwrap()
+            .workspace_id,
+        work
+    );
+    assert!(state.unload_tab(essential));
+    let unloaded = state.tabs.iter().find(|t| t.id == essential).unwrap();
+    assert!(unloaded.is_sleeping);
+    assert_eq!(unloaded.url, "https://mail.example.com/");
+    assert_ne!(state.active_tab_id, essential);
+
+    let private_tab = state.open_private_tab();
+    assert!(state.toggle_essential(private_tab).is_err());
+}
+
+#[test]
+fn folders_group_tabs_and_delete_without_losing_tabs() {
+    let mut state = BrowserState::new();
+    let t1 = state.add_tab(Some("https://example.com/1".into()), true);
+    let t2 = state.add_tab(Some("https://example.com/2".into()), false);
+    let folder = state.create_folder("Docs", Some(t1), false).unwrap();
+    assert!(state.folders.iter().any(|f| f.id == folder && f.is_pinned));
+    state.move_tab_to_folder(t2, Some(folder));
+    assert!(state.tabs.iter().find(|t| t.id == t2).unwrap().is_pinned);
+    state.toggle_folder(folder);
+    assert!(
+        state
+            .folders
+            .iter()
+            .find(|f| f.id == folder)
+            .unwrap()
+            .collapsed
+    );
+    state.rename_folder(folder, "Reading").unwrap();
+    assert_eq!(
+        state.folders.iter().find(|f| f.id == folder).unwrap().name,
+        "Reading"
+    );
+    state.delete_folder(folder);
+    assert!(state.folders.is_empty());
+    assert!(
+        state
+            .tabs
+            .iter()
+            .any(|t| t.id == t1 && t.folder_id.is_none())
+    );
+    assert!(
+        state
+            .tabs
+            .iter()
+            .any(|t| t.id == t2 && t.folder_id.is_none())
+    );
+}
+
+#[test]
+fn workspace_reordering_themes_and_split_swap_persist_cleanly() {
+    let mut state = BrowserState::new();
+    let second = state.create_profile("Second").unwrap();
+    let third = state.create_profile("Third").unwrap();
+    state.reorder_workspace(third, 0);
+    assert_eq!(
+        state.workspaces.iter().map(|w| w.id).collect::<Vec<_>>(),
+        vec![third, 1, second]
+    );
+    assert!(state.set_workspace_accent(third, "#8ecbff").is_ok());
+    assert!(state.set_workspace_accent(third, "not-a-color").is_err());
+
+    state.switch_workspace(1);
+    let partner = state.add_tab(Some("https://example.org".into()), false);
+    let active = state.add_tab(Some("https://example.com".into()), false);
+    assert!(state.split_with(partner));
+    assert_eq!(state.split, Some([active, partner]));
+    assert!(state.swap_split());
+    assert_eq!(state.split, Some([partner, active]));
+    assert!(state.toggle_rail());
+    assert!(!state.sidebar_collapsed);
+}
+
+#[test]
+fn number_shortcuts_follow_the_sidebar_order() {
+    let mut state = BrowserState::new();
+    let loose = state.add_tab(Some("https://a.example".into()), false);
+    let foldered = state.add_tab(Some("https://b.example".into()), false);
+    let pinned = state.add_tab(Some("https://c.example".into()), false);
+    let essential = state.add_tab(Some("https://d.example".into()), false);
+    state.toggle_pin(pinned);
+    state.toggle_essential(essential).unwrap();
+    state.create_folder("Read", Some(foldered), false).unwrap();
+    assert_eq!(
+        state.sidebar_order(),
+        vec![essential, pinned, foldered, 1, loose]
+    );
+    assert_eq!(state.select_tab_position(2).unwrap().id, pinned);
+    assert_eq!(state.select_tab_position(9).unwrap().id, loose);
+    assert!(state.select_tab_position(8).is_none());
+    assert_eq!(state.cycle_tab(false).unwrap().id, essential);
+}
+
+#[test]
+fn close_shortcut_unloads_pinned_tabs_instead_of_closing_them() {
+    let mut state = BrowserState::new();
+    let pinned = state.add_tab(Some("https://mail.example".into()), false);
+    state.toggle_pin(pinned);
+    state
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.id == pinned)
+        .unwrap()
+        .url = "https://mail.example/inbox/42".into();
+    assert!(state.close_shortcut_unloads(pinned));
+    assert!(!state.close_shortcut_unloads(1));
+    state.switch_tab(pinned);
+    state.unload_tab(pinned);
+    let tab = state.tabs.iter().find(|tab| tab.id == pinned).unwrap();
+    assert!(tab.is_sleeping);
+    assert_eq!(tab.url, "https://mail.example/");
+    assert_eq!(state.active_tab_id, 1);
+}
+
+#[test]
+fn split_shortcut_pairs_the_active_tab_with_the_last_one_used() {
+    let mut state = BrowserState::new();
+    let older = state.add_tab(Some("https://a.example".into()), false);
+    let recent = state.add_tab(Some("https://b.example".into()), false);
+    let active = state.add_tab(Some("https://c.example".into()), false);
+    state.switch_tab(older);
+    state.switch_tab(recent);
+    state.switch_tab(active);
+    let elsewhere = state.add_tab(Some("https://d.example".into()), false);
+    state.switch_tab(elsewhere);
+    state.toggle_essential(elsewhere).unwrap();
+    state.create_profile("School").unwrap();
+    let school = state.active_workspace_id;
+    state
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.id == elsewhere)
+        .unwrap()
+        .workspace_id = school;
+    state.switch_tab(active);
+    assert!(state.split_with_recent());
+    assert_eq!(state.split, Some([active, recent]));
+
+    let mut lonely = BrowserState::new();
+    assert!(!lonely.split_with_recent());
+    assert_eq!(lonely.split, None);
+}

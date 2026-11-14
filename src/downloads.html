@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Downloads</title>
 <style>
-:root { color-scheme: dark; --bg:#101011; --surface-2:#232329; --hover:#282830; --active:#32323b; --line:#3b3b44; --text:#f8f8fa; --muted:#c8c8d2; --accent:#dedee3; --p:0; font-family:"Segoe UI",system-ui,sans-serif; font-size:13px; }
+:root { color-scheme: dark; --bg:#101011; --surface-2:#1f1f25; --hover:rgb(255 255 255 / .08); --active:rgb(255 255 255 / .11); --line:rgb(255 255 255 / .09); --line-strong:rgb(255 255 255 / .16); --text:#f4f4f7; --muted:#a6a6b3; --accent:#dedee3; --p:0; font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif; font-size:13px; }
 * { box-sizing:border-box; }
 html, body { margin:0; height:100%; background:transparent; overflow:hidden; }
 body { padding:12px; color:var(--text); user-select:none; }
@@ -15,7 +15,7 @@ button:active:not(:disabled) { transform:scale(.97); }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; pointer-events:none; }
 [hidden] { display:none !important; }
-.card { width:100%; background:var(--surface-2); border:1px solid var(--line); border-radius:11px; padding:10px; box-shadow:0 2px 8px rgb(0 0 0 / .45); transform-origin:top left; transform:translateY(calc((1 - var(--p)) * -6px)) scale(calc(.97 + .03 * var(--p))); opacity:var(--p); }
+.card { width:100%; background:var(--surface-2); border:1px solid var(--line-strong); border-radius:12px; padding:10px 12px; box-shadow:inset 0 1px 0 rgb(255 255 255 / .06),0 10px 28px rgb(0 0 0 / .55); transform-origin:top left; transform:translateY(calc((1 - var(--p)) * -6px)) scale(calc(.97 + .03 * var(--p))); opacity:var(--p); }
 .heading { display:flex; align-items:center; justify-content:space-between; }
 .heading-actions { display:flex; align-items:center; gap:4px; }
 .text-button { color:var(--muted); font-size:11px; font-weight:500; padding:2px 4px; white-space:nowrap; }
@@ -29,9 +29,11 @@ svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.75
 .download-item strong { display:block; font-weight:600; color:var(--text); }
 .download-item strong[data-open] { cursor:pointer; }
 .download-item small { display:block; color:var(--muted); margin:5px 0; font-variant-numeric:tabular-nums; }
-.download-item progress { width:100%; height:5px; accent-color:var(--accent); }
-.download-item button { padding:6px 9px; background:var(--active); font-size:11.5px; font-weight:500; margin-top:6px; }
-.download-item button:hover { background:#444450; }
+.download-item progress { width:100%; height:4px; border:0; border-radius:2px; overflow:hidden; background:rgb(255 255 255 / .1); accent-color:var(--accent); }
+.download-item progress::-webkit-progress-bar { background:rgb(255 255 255 / .1); border-radius:2px; }
+.download-item progress::-webkit-progress-value { background:var(--accent); border-radius:2px; transition:width 200ms ease; }
+.download-item button { padding:5px 10px; background:var(--active); border:1px solid var(--line); font-size:11.5px; font-weight:500; margin-top:6px; }
+.download-item button:hover { background:rgb(255 255 255 / .16); border-color:var(--line-strong); }
 .download-actions { display:flex; gap:6px; margin-top:6px; }
 @media (prefers-reduced-motion:reduce) { .card { transform:none; } }
 </style>

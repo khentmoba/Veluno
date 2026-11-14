@@ -404,6 +404,42 @@ pub fn quiet(view: &WebView) -> bool {
     }
 }
 
+/// Puts plain text on the Windows clipboard.
+pub fn set_clipboard_text(text: &str) -> Result<(), String> {
+    use windows::Win32::{
+        Foundation::{GlobalFree, HANDLE},
+        System::{
+            DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData},
+            Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock},
+        },
+    };
+    const CF_UNICODETEXT: u32 = 13;
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    // SAFETY: the clipboard is opened and always closed in this block. The allocation is sized for
+    // `wide`, locked before the copy, and either handed to the clipboard or freed on failure.
+    unsafe {
+        OpenClipboard(None).map_err(|error| error.to_string())?;
+        let result = (|| -> windows::core::Result<()> {
+            EmptyClipboard()?;
+            let memory = GlobalAlloc(GMEM_MOVEABLE, std::mem::size_of_val(wide.as_slice()))?;
+            let target = GlobalLock(memory).cast::<u16>();
+            if target.is_null() {
+                let _ = GlobalFree(Some(memory));
+                return Err(windows::core::Error::from_thread());
+            }
+            std::ptr::copy_nonoverlapping(wide.as_ptr(), target, wide.len());
+            let _ = GlobalUnlock(memory);
+            if let Err(error) = SetClipboardData(CF_UNICODETEXT, Some(HANDLE(memory.0))) {
+                let _ = GlobalFree(Some(memory));
+                return Err(error);
+            }
+            Ok(())
+        })();
+        let _ = CloseClipboard();
+        result.map_err(|error| error.to_string())
+    }
+}
+
 pub fn mute(view: &WebView, muted: bool) -> Result<(), String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8;
     use windows::core::Interface;
@@ -870,7 +906,7 @@ pub fn attach(
         view.controller().add_AcceleratorKeyPressed(
             &AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
                 use windows::Win32::UI::Input::KeyboardAndMouse::{
-                    GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_ESCAPE, VK_MENU, VK_SHIFT,
+                    GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_ESCAPE, VK_MENU, VK_RMENU, VK_SHIFT,
                 };
                 let Some(args) = args else { return Ok(()) };
                 let mut kind = COREWEBVIEW2_KEY_EVENT_KIND::default();
@@ -883,9 +919,14 @@ pub fn attach(
                 let mut key = 0;
                 args.VirtualKey(&mut key)?;
                 let down = |key: VIRTUAL_KEY| GetKeyState(i32::from(key.0)) < 0;
-                if let Some(command) =
-                    crate::app::shortcut(key, down(VK_CONTROL), down(VK_SHIFT), down(VK_MENU))
-                {
+                let ctrl = down(VK_CONTROL);
+                // AltGr arrives as Ctrl + right Alt. It types characters such as @ and € on many
+                // layouts, so it must never trigger a Ctrl+Alt shortcut.
+                let alt_gr = ctrl && down(VK_RMENU);
+                let command = (!alt_gr)
+                    .then(|| crate::app::shortcut(key, ctrl, down(VK_SHIFT), down(VK_MENU)))
+                    .flatten();
+                if let Some(command) = command {
                     args.SetHandled(true)?;
                     let mut status = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
                     args.PhysicalKeyStatus(&mut status)?;
