@@ -296,7 +296,7 @@ body:hover .pinned-separator .sep-clear, .pinned-separator:focus-within .sep-cle
 .tab-main:hover { background:transparent; }
 .favicon { width:16px; height:16px; flex-shrink:0; display:grid; place-items:center; color:var(--muted); position:relative; }
 .favicon svg { width:14px; height:14px; }
-.favicon img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; border-radius:3px; }
+.favicon img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; border-radius:3px; filter:drop-shadow(0 0 1px rgb(255 255 255 / .55)); }
 .tab-reset-pin {
  position:absolute; inset:-3px; display:none; place-items:center; border-radius:5px;
  background:var(--surface-pop); color:var(--text); z-index:2;
@@ -503,6 +503,8 @@ body.rail .folder-row { width:38px; justify-content:center; padding:0; }
 body.rail .folder-name, body.rail .folder-count, body.rail .folder-actions { display:none; }
 body.rail .footer { flex-direction:column; width:100%; padding-top:6px; gap:4px; }
 body.rail .workspace-strip { flex-direction:column; overflow-x:hidden; overflow-y:auto; max-height:130px; width:100%; }
+/* Keep the rail footer short so tabs get the height: only the current workspace shows, scroll or swipe on it to switch. */
+body.rail .ws-pill:not(.active), body.rail #btn-ram-saver { display:none; }
 body.rail .app-menu .menu { left:50px; top:8px; }
 body.rail #profiles .menu { left:50px; right:auto; bottom:8px; }
 
@@ -937,6 +939,7 @@ function renderTabs() {
  const sig=JSON.stringify([currentState.split,tabs.map(t=>[t.id,t.title,t.custom_title,t.url,t.pinned_url,t.is_pinned,t.is_sleeping,t.favicon,t.error,t.is_playing_audio,t.is_muted,t.is_loading,t.folder_id]),folders,workspace?.pins_collapsed,query,currentState.active_workspace_id,currentState.active_tab_id,renamingTabId,renamingFolderId]);
  if(sig===tabSignature) return;
  tabSignature=sig;
+ const flip=captureTabRows(query);
 
  const matchTab=t=>!query||((t.custom_title||'')+' '+t.title+' '+t.url).toLowerCase().includes(query);
  const pinnedEl=$('pinned-tabs');
@@ -974,6 +977,32 @@ function renderTabs() {
  pinnedEl.classList.toggle('collapsed',!!workspace?.pins_collapsed&&!query);
  $('pinned-separator').hidden=!hasPins;
  $('empty-tabs').hidden=(pinnedCount+normalCount)>0||!query;
+ playTabRows(flip);
+}
+
+// Zen-style list motion: rows glide from where they were, so closing, opening and reordering
+// tabs moves the list instead of jumping. Skipped on workspace switches, while filtering, and
+// for reduced motion.
+let flipWorkspace=null;
+function captureTabRows(query) {
+ const workspace=currentState.active_workspace_id, sameWorkspace=flipWorkspace===workspace;
+ flipWorkspace=workspace;
+ if(reducedMotion.matches||query||!sameWorkspace) return null;
+ const rows=new Map();
+ for(const row of document.querySelectorAll('section.tabs .tab[data-tab-id]')) rows.set(row.dataset.tabId,row.getBoundingClientRect().top);
+ return rows;
+}
+function playTabRows(before) {
+ if(!before) return;
+ for(const row of document.querySelectorAll('section.tabs .tab[data-tab-id]')) {
+  const top=before.get(row.dataset.tabId);
+  if(top===undefined) {
+   row.animate([{opacity:0,transform:'translateX(-10px) scale(.97)'},{opacity:1,transform:'none'}],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'});
+   continue;
+  }
+  const dy=top-row.getBoundingClientRect().top;
+  if(Math.abs(dy)>1) row.animate([{transform:`translateY(${dy}px)`},{transform:'none'}],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'});
+ }
 }
 
 window.updateState = state => {
@@ -1062,7 +1091,7 @@ window.updateState = state => {
  $('media-bar').hidden=!playing;
  if(playing) {
   $('media-title').textContent=playing.custom_title||playing.title||playing.url;
-  $('media-favicon').replaceChildren(makeFavicon(playing).favicon.firstChild);
+  $('media-favicon').replaceChildren(...makeFavicon(playing).favicon.childNodes);
   $('media-mute').replaceChildren(icon(playing.is_muted?'muted':'audio'));
   $('media-focus').onclick=()=>Veluno.send('switch_tab',{id:playing.id});
   $('media-play').onclick=()=>Veluno.send('media_play_pause',{id:playing.id});

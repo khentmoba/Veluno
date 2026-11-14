@@ -48,7 +48,7 @@ form:focus-within { border-bottom-color:color-mix(in srgb, var(--accent) 55%, tr
 .option[aria-selected="true"] { background:rgb(255 255 255 / .11); box-shadow:inset 0 1px 0 rgb(255 255 255 / .08); }
 .option-icon { width:18px; height:18px; flex-shrink:0; display:grid; place-items:center; }
 .option-icon svg,.option-icon img { grid-area:1/1; width:18px; height:18px; }
-.option-icon img { object-fit:contain; border-radius:3px; }
+.option-icon img { object-fit:contain; border-radius:3px; filter:drop-shadow(0 0 1px rgb(255 255 255 / .55)); }
 .option-text { min-width:0; flex:1; }
 .option-title,.option-detail { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .option-title { font-size:14px; font-weight:500; line-height:1.45; color:#f8f8fa; }
@@ -150,6 +150,7 @@ function commandSuggestions(rawQuery) {
  const words=q.split(/\s+/).filter(Boolean);
  return cmds.filter(c=>words.every(w=>(c.title+' '+c.detail).toLowerCase().includes(w)));
 }
+const COMMAND_ICONS={copy_url:'M9 9h11v11H9zM5 15H4V4h11v1',create_folder:'M3 6h6l2 2h10v11H3zM12 11v5m-2.5-2.5h5',cycle_workspace:'M4 8h14l-3-3M20 16H6l3 3',new_private_tab:'M3 11c3-3 15-3 18 0M5 11l1.5-5h11l1.5 5M8.5 18a2.5 2.5 0 1 0 0-.01M15.5 18a2.5 2.5 0 1 0 0-.01M11 17.5h2',open_history:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4v5l3 2',open_settings:'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM12 2.5v3m0 13v3M2.5 12h3m13 0h3M5.3 5.3l2.1 2.1m9.2 9.2 2.1 2.1M5.3 18.7l2.1-2.1m9.2-9.2 2.1-2.1',reload_fresh:'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5',sleep_inactive_tabs:'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z',split_recent:'M3 4h18v16H3zM12 4v16',split_tab:'M3 4h18v16H3zM12 4v16',swap_split:'M4 8h16l-3-3M20 16H4l3 3',unsplit:'M3 4h18v16H3zM9 10l6 4m0-4-6 4',toggle_downloads:'M12 3v12m-5-5 5 5 5-5M4 20h16',toggle_essential:'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9Z',toggle_mute:'M4 9h4l5-4v14l-5-4H4zM17 9l4 6m0-6-4 6',toggle_pin:'M9 3h6l-1 6 3 3H7l3-3ZM12 12v9',toggle_rail:'M3 4h18v16H3zM8 4v16',toggle_reader:'M4 5c3-1 6-1 8 1 2-2 5-2 8-1v14c-3-1-6-1-8 1-2-2-5-2-8-1zM12 6v14',toggle_side_panel:'M3 4h18v16H3zM15 4v16',toggle_sidebar:'M3 4h18v16H3zM9 4v16'};
 function render() {
  const val=input.value;
  const isCmd=val.trimStart().startsWith('>');
@@ -161,7 +162,7 @@ function render() {
   const row=document.createElement('div'); row.id='new-tab-option-'+index; row.className='option'; row.setAttribute('role','option');
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('aria-hidden','true');
   const path=document.createElementNS(svg.namespaceURI,'path');
-  path.setAttribute('d',option.command?'M5 12h14m-6-6 6 6-6 6':option.search?'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm5 12 6 6':option.id?'M4 5h16v14H4zM4 9h16':option.history?'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4v5l3 2':option.bookmark?'m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z':'M5 12h14m-6-6 6 6-6 6');
+  path.setAttribute('d',option.command?(COMMAND_ICONS[option.command]||'M5 12h14m-6-6 6 6-6 6'):option.search?'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm5 12 6 6':option.id?'M4 5h16v14H4zM4 9h16':option.history?'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4v5l3 2':option.bookmark?'m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z':'M5 12h14m-6-6 6 6-6 6');
   svg.append(path);
   const icon=document.createElement('span'); icon.className='option-icon'; icon.setAttribute('aria-hidden','true'); icon.append(svg);
   if(!option.search&&!option.command) {
