@@ -176,7 +176,18 @@
         : '',
     };
   }
-  window.Veluno = { send, resolveAddress, suggestions, suggestionDetail, highlight, downloadSummary, displayAddress, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
+  // Share of bytes received across running downloads with a known size, or null when nothing is measurable.
+  function downloadProgress(items = []) {
+    let received = 0, total = 0;
+    for (const item of items) {
+      const size = Number(item.total) || 0;
+      if (item.status !== 'downloading' || size <= 0) continue;
+      total += size;
+      received += Math.min(size, Math.max(0, Number(item.received) || 0));
+    }
+    return total > 0 ? received / total : null;
+  }
+  window.Veluno = { send, resolveAddress, suggestions, suggestionDetail, highlight, downloadSummary, downloadProgress, displayAddress, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
   const postShortcut = post;
   const stringify = JSON.stringify;
   window.addEventListener('keydown', event => {
