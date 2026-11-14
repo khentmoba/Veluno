@@ -187,6 +187,7 @@
     if (event.ctrlKey && !event.altKey && !event.metaKey) {
       if (key === 't') action = event.shiftKey ? 'restore_closed_tab' : 'new_tab';
       else if (key === 'k' && !event.shiftKey) action = 'open_command_palette';
+      else if (key === 'c' && event.shiftKey) action = 'copy_url';
       else if (key === 's' && event.shiftKey) action = 'sleep_inactive_tabs';
       else if (key === 'b' && event.shiftKey) action = 'toggle_sidebar';
       else if (key === 'n' && event.shiftKey) action = 'new_private_tab';

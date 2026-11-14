@@ -136,6 +136,10 @@ pub enum Command {
         id: usize,
     },
     SwapSplit,
+    CopyUrl {
+        #[serde(default)]
+        markdown: bool,
+    },
     OpenInSidePanel {
         id: usize,
     },
@@ -266,6 +270,28 @@ pub enum Command {
     NewPrivateTab,
 }
 
+/// The text Copy URL puts on the clipboard: the address, or a Markdown link to it.
+pub fn copied_url_text(title: &str, url: &str, markdown: bool) -> String {
+    if !markdown {
+        return url.to_string();
+    }
+    let title = title.trim();
+    let label = if title.is_empty() { url } else { title };
+    let label: String = label
+        .chars()
+        .flat_map(|c| match c {
+            '[' | ']' | '\\' => vec!['\\', c],
+            '\n' | '\r' => vec![' '],
+            _ => vec![c],
+        })
+        .collect();
+    let target = url
+        .replace('(', "%28")
+        .replace(')', "%29")
+        .replace(' ', "%20");
+    format!("[{label}]({target})")
+}
+
 /// Browser shortcuts by Windows virtual-key code, matched before the page sees the key.
 pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command> {
     let letter = char::from_u32(key).filter(char::is_ascii_alphanumeric);
@@ -274,6 +300,7 @@ pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command>
             (Some('T'), ..) if shift => Command::RestoreClosedTab,
             (Some('T'), ..) => Command::NewTab { url: None },
             (Some('K'), _, false) => Command::OpenCommandPalette,
+            (Some('C'), _, true) => Command::CopyUrl { markdown: false },
             (Some('B'), _, true) => Command::ToggleSidebar,
             (Some('S'), _, true) => Command::SleepInactiveTabs,
             (Some('N'), _, true) => Command::NewPrivateTab,
@@ -294,6 +321,10 @@ pub fn shortcut(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Command>
             (_, 0xBB | 0x6B, _) => Command::Zoom { delta: 10 },
             (_, 0xBD | 0x6D, _) => Command::Zoom { delta: -10 },
             (Some('0'), _, false) | (_, 0x60, false) => Command::Zoom { delta: 0 },
+            _ => return None,
+        },
+        (true, true) if shift => match letter {
+            Some('C') => Command::CopyUrl { markdown: true },
             _ => return None,
         },
         (true, true) if !shift => match letter {
@@ -941,6 +972,7 @@ fn content(
                             | Command::ToggleRail
                             | Command::CycleWorkspace { .. }
                             | Command::SwapSplit
+                            | Command::CopyUrl { .. }
                             | Command::RestoreClosedTab
                             | Command::SleepInactiveTabs
                             | Command::CycleTab { .. }
@@ -1275,6 +1307,7 @@ fn build_chrome_views(
                 | Command::ToggleSidePanel
                 | Command::SplitTab { .. }
                 | Command::SwapSplit
+                | Command::CopyUrl { .. }
                 | Command::Unsplit
                 | Command::CycleWorkspace { .. }
                 | Command::CreateFolder { .. }
@@ -2070,6 +2103,19 @@ pub fn run(args: &[String]) -> wry::Result<()> {
                             },
                             Command::SplitTab { id } => { if state.split_with(id) { palette_open = false; } },
                             Command::SwapSplit => { state.swap_split(); palette_open = false; },
+                            Command::CopyUrl { markdown } => {
+                                palette_open = false;
+                                if let Some(tab) = state.active_tab() {
+                                    let title = tab.custom_title.as_deref().unwrap_or(&tab.title);
+                                    let text = copied_url_text(title, &tab.url, markdown);
+                                    let message = match desktop::set_clipboard_text(&text) {
+                                        Ok(()) if markdown => "Copied link as Markdown",
+                                        Ok(()) => "Copied current URL",
+                                        Err(_) => "Could not copy the address",
+                                    };
+                                    let _ = sidebar.evaluate_script(&format!("window.showToast?.({})", serde_json::Value::from(message)));
+                                }
+                            },
                             Command::Unsplit => { state.split = None; palette_open = false; },
                             Command::OpenInSidePanel { id } => { state.open_in_side_panel(id); },
                             Command::ToggleSidePanel => { state.side_panel_open = !state.side_panel_open && state.side_panel_url.is_some(); palette_open = false; },

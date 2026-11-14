@@ -18,8 +18,8 @@ html { background:var(--bg); }
 body {
  margin:0; min-height:100vh; color:var(--text); display:flex; flex-direction:column; padding:22px 28px 18px; position:relative; overflow-x:hidden;
  background:
-  radial-gradient(70% 55% at 12% 0%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 70%),
-  radial-gradient(60% 60% at 100% 100%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
+  radial-gradient(70% 55% at 12% 0%, color-mix(in srgb, var(--ws, var(--accent)) var(--ws-a, 17%), transparent), transparent 70%),
+  radial-gradient(60% 60% at 100% 100%, color-mix(in srgb, var(--ws, var(--accent)) var(--ws-b, 10%), transparent), transparent 70%),
   var(--bg);
  scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent;
 }

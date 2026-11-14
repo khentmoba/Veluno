@@ -139,6 +139,8 @@ function commandSuggestions(rawQuery) {
   {command:'cycle_workspace',payload:{forward:true},title:'Next workspace',detail:'Switch to next workspace',kbd:'Ctrl+Alt+E'},
   state.side_panel_url?{command:'toggle_side_panel',title:state.side_panel_open?'Hide side web panel':'Show side web panel',detail:'Toggle docked side panel'}:null,
   active?{command:'toggle_mute',payload:{id:active.id},title:active.is_muted?'Unmute current tab':'Mute current tab',detail:'Toggle tab audio'}:null,
+  active?{command:'copy_url',title:'Copy current URL',detail:active.url,kbd:'Ctrl+Shift+C'}:null,
+  active?{command:'copy_url',payload:{markdown:true},title:'Copy current URL as Markdown link',detail:'[title](url)',kbd:'Ctrl+Shift+Alt+C'}:null,
   {command:'toggle_reader',title:'Toggle reader view',detail:'Clean reading layout for articles',kbd:'F9'},
   {command:'reload_fresh',title:'Reload fresh site files',detail:'Bypass cached assets and reload',kbd:'Ctrl+Shift+R'},
   {command:'toggle_downloads',title:'Toggle downloads',detail:'Show recent downloads',kbd:'Ctrl+J'},

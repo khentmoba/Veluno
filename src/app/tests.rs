@@ -85,6 +85,14 @@ fn shortcuts_map_virtual_keys_and_leave_page_keys_alone() {
     );
     assert_eq!(action(0xDC, true, true, false), "Some(SwapSplit)");
     assert_eq!(
+        action(0x43, true, true, false),
+        "Some(CopyUrl { markdown: false })"
+    );
+    assert_eq!(
+        action(0x43, true, true, true),
+        "Some(CopyUrl { markdown: true })"
+    );
+    assert_eq!(
         action(0x2E, true, true, false),
         "Some(OpenSettings { section: Some(\"privacy\") })"
     );
@@ -195,5 +203,21 @@ fn side_panel_bounds_interpolate_with_progress() {
     assert_eq!(
         open_content.size.to_logical::<f64>(1.0).width,
         1000. - open_width - ui::WINDOW_MARGIN
+    );
+}
+
+#[test]
+fn copy_url_text_is_the_address_or_an_escaped_markdown_link() {
+    assert_eq!(
+        copied_url_text("Docs", "https://example.com/a", false),
+        "https://example.com/a"
+    );
+    assert_eq!(
+        copied_url_text("Rust [book]", "https://example.com/a (b)", true),
+        r"[Rust \[book\]](https://example.com/a%20%28b%29)"
+    );
+    assert_eq!(
+        copied_url_text("  ", "https://example.com/", true),
+        "[https://example.com/](https://example.com/)"
     );
 }

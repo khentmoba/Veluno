@@ -404,6 +404,42 @@ pub fn quiet(view: &WebView) -> bool {
     }
 }
 
+/// Puts plain text on the Windows clipboard.
+pub fn set_clipboard_text(text: &str) -> Result<(), String> {
+    use windows::Win32::{
+        Foundation::{GlobalFree, HANDLE},
+        System::{
+            DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData},
+            Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock},
+        },
+    };
+    const CF_UNICODETEXT: u32 = 13;
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    // SAFETY: the clipboard is opened and always closed in this block. The allocation is sized for
+    // `wide`, locked before the copy, and either handed to the clipboard or freed on failure.
+    unsafe {
+        OpenClipboard(None).map_err(|error| error.to_string())?;
+        let result = (|| -> windows::core::Result<()> {
+            EmptyClipboard()?;
+            let memory = GlobalAlloc(GMEM_MOVEABLE, std::mem::size_of_val(wide.as_slice()))?;
+            let target = GlobalLock(memory).cast::<u16>();
+            if target.is_null() {
+                let _ = GlobalFree(Some(memory));
+                return Err(windows::core::Error::from_thread());
+            }
+            std::ptr::copy_nonoverlapping(wide.as_ptr(), target, wide.len());
+            let _ = GlobalUnlock(memory);
+            if let Err(error) = SetClipboardData(CF_UNICODETEXT, Some(HANDLE(memory.0))) {
+                let _ = GlobalFree(Some(memory));
+                return Err(error);
+            }
+            Ok(())
+        })();
+        let _ = CloseClipboard();
+        result.map_err(|error| error.to_string())
+    }
+}
+
 pub fn mute(view: &WebView, muted: bool) -> Result<(), String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8;
     use windows::core::Interface;
