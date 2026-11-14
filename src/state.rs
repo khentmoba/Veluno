@@ -14,6 +14,20 @@ pub struct Workspace {
     /// Private profiles open InPrivate pages and are never saved or recorded in history.
     #[serde(default)]
     pub private: bool,
+    /// Whether pinned tabs in this workspace are collapsed under the workspace header.
+    #[serde(default)]
+    pub pins_collapsed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Folder {
+    pub id: usize,
+    pub workspace_id: usize,
+    pub name: String,
+    #[serde(default)]
+    pub collapsed: bool,
+    #[serde(default)]
+    pub is_pinned: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +69,18 @@ pub struct Tab {
     /// Page zoom percentage, kept with the tab across sleep and restart.
     #[serde(default = "default_zoom")]
     pub zoom: u32,
+    /// Global Zen-style Essential tab shown as an icon tile across regular workspaces.
+    #[serde(default)]
+    pub is_essential: bool,
+    /// Original URL saved when pinned or added to Essentials, for one-click reset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_url: Option<String>,
+    /// Optional collapsible sidebar folder containing this tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<usize>,
+    /// User-defined tab label (double-click to rename, just like Zen).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_title: Option<String>,
     #[serde(skip)]
     pub opener: Option<usize>,
     #[serde(skip)]
@@ -64,6 +90,16 @@ pub struct Tab {
 fn default_zoom() -> u32 {
     100
 }
+
+fn default_sidebar_width() -> f64 {
+    260.0
+}
+
+fn default_true() -> bool {
+    true
+}
+
+pub const MAX_ESSENTIALS: usize = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Shortcut {
@@ -85,9 +121,19 @@ pub struct BrowserState {
     profiles_version: u8,
     pub sidebar_collapsed: bool,
     #[serde(default)]
+    pub sidebar_rail: bool,
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: f64,
+    #[serde(default = "default_true")]
+    pub workspace_themes: bool,
+    #[serde(default = "default_true")]
+    pub essentials_glow: bool,
+    #[serde(default)]
     pub sidebar_peek: bool,
     #[serde(skip)]
     pub topbar_peek: bool,
+    #[serde(default)]
+    pub folders: Vec<Folder>,
     pub is_loading: bool,
     pub can_restore_closed_tab: bool,
     pub shortcuts: Vec<Shortcut>,
@@ -139,6 +185,7 @@ impl BrowserState {
             accent: "#dedee3".into(),
             emoji: None,
             private: false,
+            pins_collapsed: false,
         }];
 
         let initial_tab = Tab {
@@ -160,6 +207,10 @@ impl BrowserState {
             is_playing_audio: false,
             is_muted: false,
             zoom: 100,
+            is_essential: false,
+            pinned_url: None,
+            folder_id: None,
+            custom_title: None,
             opener: None,
             document_url: None,
         };
@@ -171,8 +222,13 @@ impl BrowserState {
             workspaces,
             profiles_version: 1,
             sidebar_collapsed: false,
+            sidebar_rail: false,
+            sidebar_width: 260.0,
+            workspace_themes: true,
+            essentials_glow: true,
             sidebar_peek: false,
             topbar_peek: false,
+            folders: Vec::new(),
             is_loading: false,
             can_restore_closed_tab: false,
             shortcuts: Self::load_shortcuts(),
@@ -273,12 +329,42 @@ impl BrowserState {
             state.active_workspace_id = state.workspaces.first().map_or(1, |w| w.id);
             state.add_tab(None, false);
         }
+        let mut folder_ids = std::collections::HashSet::new();
+        state.folders.retain(|folder| {
+            folder.id > 0
+                && workspace_ids.contains(&folder.workspace_id)
+                && !folder.name.trim().is_empty()
+                && folder_ids.insert(folder.id)
+        });
+        let mut essential_count = 0usize;
         for tab in &mut state.tabs {
             tab.is_loading = false;
             tab.can_go_back = false;
             tab.can_go_forward = false;
             tab.error = None;
             tab.is_sleeping = tab.id != state.active_tab_id;
+            if tab.is_essential {
+                if essential_count < MAX_ESSENTIALS {
+                    essential_count += 1;
+                    tab.folder_id = None;
+                    if tab.pinned_url.is_none() {
+                        tab.pinned_url = Some(tab.url.clone());
+                    }
+                } else {
+                    tab.is_essential = false;
+                }
+            }
+            if tab.is_pinned && tab.pinned_url.is_none() {
+                tab.pinned_url = Some(tab.url.clone());
+            }
+            if let Some(fid) = tab.folder_id
+                && !state
+                    .folders
+                    .iter()
+                    .any(|f| f.id == fid && f.workspace_id == tab.workspace_id)
+            {
+                tab.folder_id = None;
+            }
         }
         if !state.tabs.iter().any(|tab| tab.id == state.active_tab_id) {
             state.active_tab_id = state.tabs[0].id;
@@ -358,6 +444,10 @@ impl BrowserState {
             is_playing_audio: false,
             is_muted: false,
             zoom: 100,
+            is_essential: false,
+            pinned_url: None,
+            folder_id: None,
+            custom_title: None,
             opener: Some(self.active_tab_id),
             document_url: None,
         };
@@ -446,7 +536,7 @@ impl BrowserState {
         true
     }
 
-    /// Closes every unpinned tab in this workspace except `tab_id`; returns how many closed.
+    /// Closes every unpinned, non-essential tab in this workspace except `tab_id`; returns how many closed.
     pub fn close_other_tabs(&mut self, tab_id: usize) -> usize {
         let Some(workspace) = self
             .tabs
@@ -459,7 +549,12 @@ impl BrowserState {
         let ids: Vec<_> = self
             .tabs
             .iter()
-            .filter(|tab| tab.id != tab_id && tab.workspace_id == workspace && !tab.is_pinned)
+            .filter(|tab| {
+                tab.id != tab_id
+                    && tab.workspace_id == workspace
+                    && !tab.is_pinned
+                    && !tab.is_essential
+            })
             .map(|tab| tab.id)
             .collect();
         for id in &ids {
@@ -480,7 +575,9 @@ impl BrowserState {
             .tabs
             .iter()
             .skip(index + 1)
-            .filter(|tab| tab.workspace_id == workspace && tab.is_pinned == pinned)
+            .filter(|tab| {
+                tab.workspace_id == workspace && tab.is_pinned == pinned && !tab.is_essential
+            })
             .map(|tab| tab.id)
             .collect();
         for id in &ids {
@@ -524,12 +621,19 @@ impl BrowserState {
     }
 
     pub fn switch_tab(&mut self, tab_id: usize) -> Option<&Tab> {
+        let current_is_private = self.private_workspace() == Some(self.active_workspace_id);
+        let active_workspace_id = self.active_workspace_id;
         if let Some(t) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
             self.activity_clock = self.activity_clock.saturating_add(1);
             t.last_active = self.activity_clock;
             t.is_sleeping = false;
             self.active_tab_id = tab_id;
-            self.active_workspace_id = t.workspace_id;
+            if t.is_essential && !current_is_private {
+                // Global Essentials follow the user across regular workspaces without ripping them out of context.
+                t.workspace_id = active_workspace_id;
+            } else {
+                self.active_workspace_id = t.workspace_id;
+            }
         }
         self.active_tab()
     }
@@ -551,6 +655,7 @@ impl BrowserState {
                     && tab.id != self.active_tab_id
                     && Some(tab.id) != self.split_partner()
                     && !tab.is_pinned
+                    && !tab.is_essential
                     && !tab.is_sleeping
                     && !tab.is_loading
                     && !tab.has_capture
@@ -588,6 +693,7 @@ impl BrowserState {
             accent: "#dedee3".into(),
             emoji: None,
             private: false,
+            pins_collapsed: false,
         });
         self.switch_workspace(id);
         Ok(id)
@@ -644,6 +750,11 @@ impl BrowserState {
                 tab.workspace_id = destination;
             }
         }
+        for folder in &mut self.folders {
+            if folder.workspace_id == id {
+                folder.workspace_id = destination;
+            }
+        }
         self.workspaces.retain(|w| w.id != id);
         if self.active_workspace_id == id {
             self.active_workspace_id = destination;
@@ -658,13 +769,19 @@ impl BrowserState {
         let Some(to) = self.tabs.iter().position(|t| t.id == target) else {
             return;
         };
-        if from == to
-            || self.tabs[from].workspace_id != self.tabs[to].workspace_id
-            || self.tabs[from].is_pinned != self.tabs[to].is_pinned
-        {
+        let same_essential = self.tabs[from].is_essential && self.tabs[to].is_essential;
+        let same_group = !self.tabs[from].is_essential
+            && !self.tabs[to].is_essential
+            && self.tabs[from].workspace_id == self.tabs[to].workspace_id
+            && self.tabs[from].is_pinned == self.tabs[to].is_pinned;
+        if from == to || (!same_essential && !same_group) {
             return;
         }
-        let tab = self.tabs.remove(from);
+        let target_folder = self.tabs[to].folder_id;
+        let mut tab = self.tabs.remove(from);
+        if same_group {
+            tab.folder_id = target_folder;
+        }
         // The target stays present, but never trust an index that could have moved.
         match self.tabs.iter().position(|t| t.id == target) {
             Some(to) => self.tabs.insert(to + usize::from(after), tab),
@@ -697,6 +814,7 @@ impl BrowserState {
                     accent: "#dedee3".into(),
                     emoji: None,
                     private: true,
+                    pins_collapsed: false,
                 });
                 id
             }
@@ -722,6 +840,9 @@ impl BrowserState {
             state.workspaces.retain(|w| w.id != private);
             state.tabs.retain(|tab| tab.workspace_id != private);
             state.closed_tabs.retain(|tab| tab.workspace_id != private);
+            state
+                .folders
+                .retain(|folder| folder.workspace_id != private);
         }
         if state.tabs.is_empty() {
             state.active_workspace_id = state.workspaces.first().map_or(1, |w| w.id);
@@ -805,6 +926,15 @@ impl BrowserState {
         self.sidebar_collapsed
     }
 
+    pub fn toggle_rail(&mut self) -> bool {
+        self.sidebar_rail = !self.sidebar_rail;
+        if self.sidebar_rail {
+            self.sidebar_collapsed = false;
+            self.sidebar_peek = false;
+        }
+        self.sidebar_rail
+    }
+
     pub fn toggle_sleep(&mut self, tab_id: usize) {
         if tab_id == self.active_tab_id || Some(tab_id) == self.split_partner() {
             return;
@@ -817,7 +947,11 @@ impl BrowserState {
     pub fn sleep_inactive_tabs(&mut self) {
         let partner = self.split_partner();
         for tab in self.tabs.iter_mut() {
-            if tab.id != self.active_tab_id && Some(tab.id) != partner {
+            if tab.id != self.active_tab_id
+                && Some(tab.id) != partner
+                && !tab.is_pinned
+                && !tab.is_essential
+            {
                 tab.is_sleeping = true;
             }
         }
@@ -826,6 +960,257 @@ impl BrowserState {
     pub fn toggle_pin(&mut self, tab_id: usize) {
         if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == tab_id) {
             tab.is_pinned = !tab.is_pinned;
+            if tab.is_pinned {
+                tab.is_essential = false;
+                tab.pinned_url = Some(tab.url.clone());
+            } else {
+                tab.pinned_url = None;
+            }
+        }
+    }
+
+    pub fn toggle_essential(&mut self, tab_id: usize) -> Result<bool, String> {
+        if self.is_private(tab_id) {
+            return Err("Private tabs cannot be added to Essentials.".into());
+        }
+        let currently_essential = self
+            .tabs
+            .iter()
+            .find(|t| t.id == tab_id)
+            .is_some_and(|t| t.is_essential);
+        if !currently_essential
+            && self.tabs.iter().filter(|t| t.is_essential).count() >= MAX_ESSENTIALS
+        {
+            return Err(format!("You can keep up to {MAX_ESSENTIALS} Essentials."));
+        }
+        let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
+            return Err("Tab not found.".into());
+        };
+        tab.is_essential = !tab.is_essential;
+        if tab.is_essential {
+            tab.is_pinned = false;
+            tab.folder_id = None;
+            if tab.pinned_url.is_none() {
+                tab.pinned_url = Some(tab.url.clone());
+            }
+        } else if !tab.is_pinned {
+            tab.pinned_url = None;
+        }
+        Ok(tab.is_essential)
+    }
+
+    /// Unloads an Essential or Pinned tab (resets to its pinned URL and sleeps it, switching away if active).
+    pub fn unload_tab(&mut self, tab_id: usize) -> bool {
+        let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
+            return false;
+        };
+        if let Some(pinned) = tab.pinned_url.clone() {
+            tab.url = pinned;
+        }
+        tab.is_loading = false;
+        tab.pending_url = None;
+        tab.is_playing_audio = false;
+        if tab_id == self.active_tab_id {
+            let replacement = self
+                .tabs
+                .iter()
+                .rev()
+                .find(|t| {
+                    t.id != tab_id && t.workspace_id == self.active_workspace_id && !t.is_sleeping
+                })
+                .or_else(|| {
+                    self.tabs
+                        .iter()
+                        .rev()
+                        .find(|t| t.id != tab_id && t.workspace_id == self.active_workspace_id)
+                })
+                .map(|t| t.id);
+            if let Some(next_id) = replacement {
+                self.switch_tab(next_id);
+            } else {
+                self.add_tab(None, false);
+            }
+        }
+        if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+            tab.is_sleeping = true;
+        }
+        true
+    }
+
+    /// Resets a pinned or essential tab back to its saved `pinned_url`, returning the URL to navigate to.
+    pub fn reset_pinned_url(&mut self, tab_id: usize) -> Option<String> {
+        let tab = self.tabs.iter_mut().find(|t| t.id == tab_id)?;
+        let target = tab.pinned_url.clone()?;
+        tab.url.clone_from(&target);
+        tab.pending_url = Some(target.clone());
+        tab.error = None;
+        Some(target)
+    }
+
+    pub fn rename_tab(&mut self, tab_id: usize, title: &str) {
+        let trimmed = title.trim();
+        if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+            tab.custom_title = (!trimmed.is_empty()).then(|| trimmed.chars().take(80).collect());
+        }
+    }
+
+    fn next_folder_id(&self) -> usize {
+        (1..=usize::MAX - 2)
+            .find(|id| !self.folders.iter().any(|f| f.id == *id))
+            .unwrap_or(1)
+    }
+
+    pub fn create_folder(
+        &mut self,
+        name: &str,
+        tab_id: Option<usize>,
+        is_pinned: bool,
+    ) -> Result<usize, String> {
+        if self.private_workspace() == Some(self.active_workspace_id) {
+            return Err("Private mode does not save folders.".into());
+        }
+        let trimmed = name.trim();
+        let folder_name: String = if trimmed.is_empty() {
+            "New Folder".into()
+        } else {
+            trimmed.chars().take(40).collect()
+        };
+        let workspace_id = tab_id
+            .and_then(|id| self.tabs.iter().find(|t| t.id == id))
+            .map_or(self.active_workspace_id, |t| t.workspace_id);
+        let pinned = tab_id
+            .and_then(|id| self.tabs.iter().find(|t| t.id == id))
+            .map_or(is_pinned, |t| t.is_pinned);
+        let id = self.next_folder_id();
+        self.folders.push(Folder {
+            id,
+            workspace_id,
+            name: folder_name,
+            collapsed: false,
+            is_pinned: pinned,
+        });
+        if let Some(tid) = tab_id {
+            self.move_tab_to_folder(tid, Some(id));
+        }
+        Ok(id)
+    }
+
+    pub fn rename_folder(&mut self, id: usize, name: &str) -> Result<(), String> {
+        let trimmed = name.trim();
+        if trimmed.is_empty()
+            || trimmed.chars().count() > 40
+            || trimmed.chars().any(char::is_control)
+        {
+            return Err("Use a folder name between 1 and 40 characters.".into());
+        }
+        let folder = self
+            .folders
+            .iter_mut()
+            .find(|f| f.id == id)
+            .ok_or("Folder not found.")?;
+        folder.name = trimmed.into();
+        Ok(())
+    }
+
+    pub fn toggle_folder(&mut self, id: usize) {
+        if let Some(folder) = self.folders.iter_mut().find(|f| f.id == id) {
+            folder.collapsed = !folder.collapsed;
+        }
+    }
+
+    pub fn delete_folder(&mut self, id: usize) {
+        self.folders.retain(|f| f.id != id);
+        for tab in &mut self.tabs {
+            if tab.folder_id == Some(id) {
+                tab.folder_id = None;
+            }
+        }
+    }
+
+    pub fn move_tab_to_folder(&mut self, tab_id: usize, folder_id: Option<usize>) {
+        if let Some(fid) = folder_id {
+            let Some(folder) = self.folders.iter().find(|f| f.id == fid).cloned() else {
+                return;
+            };
+            if let Some(tab) = self
+                .tabs
+                .iter_mut()
+                .find(|t| t.id == tab_id && !t.is_essential)
+            {
+                tab.workspace_id = folder.workspace_id;
+                tab.is_pinned = folder.is_pinned;
+                if tab.is_pinned && tab.pinned_url.is_none() {
+                    tab.pinned_url = Some(tab.url.clone());
+                }
+                tab.folder_id = Some(fid);
+            }
+        } else if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
+            tab.folder_id = None;
+        }
+    }
+
+    pub fn reorder_workspace(&mut self, id: usize, index: usize) {
+        let Some(from) = self
+            .workspaces
+            .iter()
+            .position(|w| w.id == id && !w.private)
+        else {
+            return;
+        };
+        let regular_len = self.workspaces.iter().filter(|w| !w.private).count();
+        let target = index.min(regular_len.saturating_sub(1));
+        if from == target {
+            return;
+        }
+        let space = self.workspaces.remove(from);
+        self.workspaces.insert(target, space);
+    }
+
+    pub fn set_workspace_accent(&mut self, id: usize, accent: &str) -> Result<(), String> {
+        let valid = accent.starts_with('#')
+            && (accent.len() == 7 || accent.len() == 4)
+            && accent[1..].chars().all(|c| c.is_ascii_hexdigit());
+        if !valid {
+            return Err("Invalid workspace color.".into());
+        }
+        let workspace = self
+            .workspaces
+            .iter_mut()
+            .find(|w| w.id == id && !w.private)
+            .ok_or("This workspace's theme cannot be changed.")?;
+        workspace.accent = accent.to_string();
+        Ok(())
+    }
+
+    pub fn toggle_workspace_pins(&mut self, id: usize) {
+        if let Some(w) = self.workspaces.iter_mut().find(|w| w.id == id) {
+            w.pins_collapsed = !w.pins_collapsed;
+        }
+    }
+
+    pub fn cycle_workspace(&mut self, forward: bool) -> Option<&Tab> {
+        let ids: Vec<usize> = self.workspaces.iter().map(|w| w.id).collect();
+        if ids.len() <= 1 {
+            return self.active_tab();
+        }
+        let index = ids
+            .iter()
+            .position(|id| *id == self.active_workspace_id)
+            .unwrap_or(0);
+        let next = if forward {
+            (index + 1) % ids.len()
+        } else {
+            (index + ids.len() - 1) % ids.len()
+        };
+        self.switch_workspace(ids[next])
+    }
+
+    pub fn swap_split(&mut self) -> bool {
+        if let Some([a, b]) = self.split {
+            self.split = Some([b, a]);
+            true
+        } else {
+            false
         }
     }
 
@@ -852,6 +1237,10 @@ impl BrowserState {
             is_playing_audio: false,
             is_muted: false,
             zoom: source.zoom,
+            is_essential: false,
+            pinned_url: None,
+            folder_id: source.folder_id,
+            custom_title: None,
             opener: Some(tab_id),
             document_url: None,
         };
@@ -879,6 +1268,7 @@ impl BrowserState {
         }
         let old_workspace = tab.workspace_id;
         tab.workspace_id = workspace_id;
+        tab.folder_id = None;
         if self.active_tab_id == tab_id {
             if let Some(remaining) = self
                 .tabs

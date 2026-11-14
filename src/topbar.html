@@ -2,12 +2,12 @@
 <html><head><meta charset="UTF-8"><style>
 :root { color-scheme:dark; font-family:"Segoe UI",system-ui,sans-serif; }
 html,body { margin:0; height:100%; overflow:hidden; background:#101011; user-select:none; }
-#bar { position:absolute; top:0; left:0; height:3px; width:100%; transform:scaleX(0); transform-origin:left; opacity:0; background:var(--accent,#dedee3); border-radius:0 2px 2px 0; z-index:1; }
-.chrome { position:absolute; bottom:0; left:0; right:0; height:34px; display:flex; background:#101011; border-bottom:1px solid #3b3b44; visibility:hidden; transition:visibility 0s linear 280ms; }
+#bar { position:absolute; top:0; left:0; height:2px; width:100%; transform:scaleX(0); transform-origin:left; opacity:0; background:var(--accent,#dedee3); border-radius:0 2px 2px 0; z-index:1; }
+.chrome { position:absolute; bottom:0; left:0; right:0; height:34px; display:flex; align-items:center; padding-right:4px; gap:2px; background:#101011; border-bottom:1px solid rgb(255 255 255 / .08); visibility:hidden; transition:visibility 0s linear 280ms; }
 body.open .chrome { visibility:visible; transition:none; }
-#drag { flex:1; min-width:0; display:flex; align-items:center; gap:8px; padding:0 12px; overflow:hidden; }
-.chrome button { width:46px; border:0; background:none; color:#f8f8fa; display:grid; place-items:center; cursor:default; }
-.chrome button:hover { background:#282830; } #close:hover { background:#c42b1c; color:#fff; }
+#drag { flex:1; min-width:0; height:100%; display:flex; align-items:center; gap:8px; padding:0 12px; overflow:hidden; }
+.chrome button { width:38px; height:26px; border:0; border-radius:6px; background:none; color:#c8c8d2; display:grid; place-items:center; cursor:default; }
+.chrome button:hover { background:rgb(255 255 255 / .09); color:#f8f8fa; } #close:hover { background:#c42b1c; color:#fff; }
 svg { width:10px; height:10px; fill:none; stroke:currentColor; stroke-width:1; }
 button { transition:background-color 160ms cubic-bezier(.2,0,0,1),color 160ms cubic-bezier(.2,0,0,1); }
 @media(prefers-reduced-motion:reduce) { button { transition-duration:80ms; } }

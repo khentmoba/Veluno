@@ -138,6 +138,8 @@ function press(key, modifiers = {}) {
 assert.deepEqual(press('T', { ctrlKey: true, shiftKey: true }), { action: 'restore_closed_tab' });
 assert.deepEqual(press('S', { ctrlKey: true, shiftKey: true }), { action: 'sleep_inactive_tabs' });
 assert.deepEqual(press('t', { ctrlKey: true }), { action: 'new_tab' });
+assert.deepEqual(press('k', { ctrlKey: true }), { action: 'open_command_palette' });
+assert.deepEqual(press('\\', { ctrlKey: true, shiftKey: true }), { action: 'swap_split' });
 assert.deepEqual(press('B', { ctrlKey: true, shiftKey: true }), { action: 'toggle_sidebar' });
 assert.deepEqual(press('N', { ctrlKey: true, shiftKey: true }), { action: 'new_private_tab' });
 assert.deepEqual(press('d', { ctrlKey: true }), { action: 'toggle_bookmark' });

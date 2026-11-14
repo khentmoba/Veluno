@@ -76,6 +76,14 @@ fn shortcuts_map_virtual_keys_and_leave_page_keys_alone() {
     assert_eq!(action(0x25, false, false, true), "Some(Back)");
     assert_eq!(action(0x7A, false, false, false), "Some(ToggleFullscreen)");
     assert_eq!(action(0x78, false, false, false), "Some(ToggleReader)");
+    assert_eq!(action(0x4B, true, false, false), "Some(OpenCommandPalette)");
+    assert_eq!(action(0x43, true, false, true), "Some(ToggleSidebar)");
+    assert_eq!(action(0x52, true, false, true), "Some(ToggleRail)");
+    assert_eq!(
+        action(0x45, true, false, true),
+        "Some(CycleWorkspace { forward: true })"
+    );
+    assert_eq!(action(0xDC, true, true, false), "Some(SwapSplit)");
     assert_eq!(
         action(0x2E, true, true, false),
         "Some(OpenSettings { section: Some(\"privacy\") })"

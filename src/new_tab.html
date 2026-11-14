@@ -3,49 +3,86 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Veluno — New tab search</title>
+<title>Veluno — Floating URL Bar</title>
 <style>
 /* A dark root color-scheme makes the WebView canvas opaque; scope it to the panel. */
-:root { color-scheme:normal; font-family:"Segoe UI",system-ui,sans-serif; color:#f8f8fa; --muted:#c8c8d2; --line:#3f3f49; --focus:#dedee3; }
+:root { color-scheme:normal; font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif; color:#f4f4f7; --muted:#a6a6b3; --line:rgb(255 255 255 / .11); --focus:#dedee3; --accent:#dedee3; }
 * { box-sizing:border-box; }
 html { background:transparent; }
-body { margin:0; height:100vh; background:transparent; padding:clamp(40px,18vh,160px) 24px 24px; display:flex; align-items:flex-start; justify-content:center; overflow:hidden; }
-.scrim { position:fixed; inset:0; background:rgb(0 0 0 / .56); pointer-events:none; }
-.palette { position:relative; color-scheme:dark; width:min(640px,100%); max-height:100%; display:flex; flex-direction:column; background:#1c1c21; border:1px solid #484854; border-radius:14px; box-shadow:inset 0 1px 0 rgb(255 255 255 / .08),0 28px 84px rgb(0 0 0 / .65); overflow:hidden; }
-form { display:flex; align-items:center; gap:14px; padding:14px 16px; background:#232329; border-bottom:1px solid var(--line); flex-shrink:0; }
-svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; color:var(--muted); }
-input,button { font:inherit; } input { min-width:0; width:100%; border:0; background:transparent; color:#f8f8fa; caret-color:var(--focus); font-size:17px; font-weight:500; height:36px; outline:none; }
-input::placeholder { color:var(--muted); opacity:1; } ::selection { color:white; background:#45454b; }
-form:focus-within { border-bottom-color:var(--focus); }
-.close { width:30px; height:30px; display:grid; place-items:center; border:0; border-radius:7px; background:none; color:var(--muted); cursor:pointer; flex-shrink:0; } .close svg { width:16px; height:16px; } .close:hover { background:#34343e; color:white; } .close:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
-.results { padding:6px; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:#45454b transparent; }
-.option { display:flex; align-items:center; gap:12px; padding:10px 12px; min-height:60px; border-radius:8px; cursor:pointer; }
-.option[aria-selected="true"] { background:#32323b; box-shadow:inset 0 1px 0 rgb(255 255 255 / .08); }
-.option-icon { width:18px; height:18px; flex-shrink:0; display:grid; place-items:center; } .option-icon svg,.option-icon img { grid-area:1/1; width:18px; height:18px; } .option-icon img { object-fit:contain; } .option-text { min-width:0; flex:1; } .option-title,.option-detail { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .option-title { font-size:14px; font-weight:500; line-height:1.5; color:#f8f8fa; } .option-detail { color:var(--muted); font-size:12px; line-height:1.5; }
-.empty { margin:0; padding:18px 16px 22px; font-size:13px; color:var(--muted); line-height:1.6; }
-footer { border-top:1px solid var(--line); background:#18181c; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:11px 18px; font-size:12px; color:var(--muted); flex-shrink:0; }
-kbd { font:500 11px "Segoe UI",system-ui,sans-serif; color:#f8f8fa; background:#232329; border:1px solid #484854; padding:1px 6px; border-radius:4px; margin-right:5px; }
+body { margin:0; height:100vh; background:transparent; padding:clamp(40px,17vh,155px) 24px 24px; display:flex; align-items:flex-start; justify-content:center; overflow:hidden; }
+.scrim { position:fixed; inset:0; background:rgb(0 0 0 / .54); pointer-events:none; }
+.palette {
+ position:relative; color-scheme:dark; width:min(660px,100%); max-height:100%;
+ display:flex; flex-direction:column;
+ background:#17171b;
+ border:1px solid rgb(255 255 255 / .14); border-radius:16px;
+ box-shadow:inset 0 1px 0 rgb(255 255 255 / .09), 0 32px 96px rgb(0 0 0 / .72);
+ overflow:hidden;
+}
+form {
+ display:flex; align-items:center; gap:12px; padding:12px 14px 12px 16px;
+ background:rgb(255 255 255 / .03); border-bottom:1px solid var(--line); flex-shrink:0;
+}
+svg { width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; color:var(--muted); }
+input,button { font:inherit; }
+input { min-width:0; width:100%; border:0; background:transparent; color:#f8f8fa; caret-color:var(--accent); font-size:16.5px; font-weight:500; height:36px; outline:none; }
+input::placeholder { color:var(--muted); opacity:.85; }
+::selection { color:white; background:#45454b; }
+form:focus-within { border-bottom-color:color-mix(in srgb, var(--accent) 55%, transparent); }
+.ws-chip {
+ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px;
+ background:rgb(255 255 255 / .07); border:1px solid var(--line);
+ font-size:11.5px; font-weight:600; color:var(--muted); white-space:nowrap; flex-shrink:0;
+}
+.cmd-chip {
+ padding:4px 9px; border-radius:7px; border:1px solid var(--line); background:rgb(255 255 255 / .05);
+ color:var(--muted); font-size:11.5px; font-weight:600; cursor:pointer; flex-shrink:0;
+}
+.cmd-chip:hover { background:rgb(255 255 255 / .12); color:#fff; }
+.close { width:28px; height:28px; display:grid; place-items:center; border:0; border-radius:7px; background:none; color:var(--muted); cursor:pointer; flex-shrink:0; }
+.close svg { width:15px; height:15px; }
+.close:hover { background:rgb(255 255 255 / .11); color:white; }
+.close:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.results { padding:6px; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:rgb(255 255 255 / .2) transparent; }
+.option { display:flex; align-items:center; gap:12px; padding:9px 12px; min-height:52px; border-radius:9px; cursor:pointer; }
+.option[aria-selected="true"] { background:rgb(255 255 255 / .11); box-shadow:inset 0 1px 0 rgb(255 255 255 / .08); }
+.option-icon { width:18px; height:18px; flex-shrink:0; display:grid; place-items:center; }
+.option-icon svg,.option-icon img { grid-area:1/1; width:18px; height:18px; }
+.option-icon img { object-fit:contain; border-radius:3px; }
+.option-text { min-width:0; flex:1; }
+.option-title,.option-detail { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.option-title { font-size:14px; font-weight:500; line-height:1.45; color:#f8f8fa; }
+.option-detail { color:var(--muted); font-size:12px; line-height:1.4; }
+.option-kbd {
+ font:500 11px "Segoe UI",system-ui,sans-serif; color:var(--muted);
+ background:rgb(255 255 255 / .06); border:1px solid var(--line); padding:2px 7px; border-radius:5px; white-space:nowrap;
+}
+.empty { margin:0; padding:16px 16px 20px; font-size:13px; color:var(--muted); line-height:1.55; }
+footer { border-top:1px solid var(--line); background:rgb(0 0 0 / .22); display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:10px 16px; font-size:11.5px; color:var(--muted); flex-shrink:0; }
+kbd { font:500 11px "Segoe UI",system-ui,sans-serif; color:#f8f8fa; background:rgb(255 255 255 / .07); border:1px solid var(--line); padding:1px 6px; border-radius:4px; margin-right:5px; }
 .sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 [hidden] { display:none!important; }
-@media(max-width:500px) { body { padding:40px 12px 12px; } form { padding:12px; gap:10px; } input { font-size:15px; } }
-.close,.option { transition:background-color 160ms cubic-bezier(.2,0,0,1),color 160ms cubic-bezier(.2,0,0,1),transform 180ms cubic-bezier(.16,1,.3,1); }
+@media(max-width:500px) { body { padding:36px 12px 12px; } form { padding:10px 12px; gap:8px; } input { font-size:15px; } .ws-chip { display:none; } }
+.close,.option,.cmd-chip { transition:background-color 140ms cubic-bezier(.2,0,0,1),color 140ms cubic-bezier(.2,0,0,1),transform 160ms cubic-bezier(.16,1,.3,1); }
 .close:active { transform:scale(.96); transition-duration:70ms; }
-@media(prefers-reduced-motion:reduce) { .close,.option { transition-duration:80ms; } .close:active { transform:none; } }
+@media(prefers-reduced-motion:reduce) { .close,.option,.cmd-chip { transition-duration:80ms; } .close:active { transform:none; } }
 </style>
 </head>
 <body>
 <div class="scrim" aria-hidden="true"></div>
-<section class="palette" role="dialog" aria-modal="true" aria-label="Open a new tab">
+<section class="palette" role="dialog" aria-modal="true" aria-label="Floating URL bar and command palette">
 <form id="new-tab-form" role="search">
 <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg>
-<label for="new-tab-input" class="sr-only">Search the web or enter address</label>
-<input id="new-tab-input" placeholder="Search the web or enter address" role="combobox" aria-autocomplete="list" aria-controls="new-tab-results" aria-expanded="false" autocomplete="off" spellcheck="false">
-<button class="close" type="button" id="dismiss" title="Cancel (Escape)" aria-label="Cancel new tab"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
+<label for="new-tab-input" class="sr-only">Search the web, enter address, or type &gt; for commands</label>
+<input id="new-tab-input" placeholder="Search, enter URL, or type > for commands" role="combobox" aria-autocomplete="list" aria-controls="new-tab-results" aria-expanded="false" autocomplete="off" spellcheck="false">
+<span class="ws-chip" id="ws-chip" hidden></span>
+<button type="button" class="cmd-chip" id="cmd-mode-btn" title="Switch to command mode (>)" aria-label="Command mode">&gt; Commands</button>
+<button class="close" type="button" id="dismiss" title="Cancel (Escape)" aria-label="Cancel"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
 </form>
-<div class="results" id="new-tab-results" role="listbox" aria-label="Search or switch to an open tab"></div>
-<p class="empty" id="empty">Search the web or enter a URL. Your current page stays open.</p>
+<div class="results" id="new-tab-results" role="listbox" aria-label="Suggestions or commands"></div>
+<p class="empty" id="empty">Search with Brave, jump to an open tab, use @yt/@gh/@w bangs, or type <strong>&gt;</strong> for Zen actions.</p>
 <div class="sr-only" role="status" id="result-status" aria-live="polite"></div>
-<footer><span><kbd>Enter</kbd>Open <span aria-hidden="true"> · </span><kbd>↑ ↓</kbd>Choose</span><span><kbd>Esc</kbd>Cancel</span></footer>
+<footer><span><kbd>Enter</kbd><span id="footer-enter">Open</span> <span aria-hidden="true"> · </span><kbd>↑ ↓</kbd>Choose <span aria-hidden="true"> · </span><kbd>&gt;</kbd>Commands</span><span><kbd>Esc</kbd>Cancel</span></footer>
 </section>
 <script>__COMMON_SCRIPT__</script>
 <script>
@@ -60,7 +97,7 @@ let composing=false;
 const panel=document.querySelector('.palette');
 const scrim=document.querySelector('.scrim');
 const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
-reducedMotion.addEventListener('change',()=>{if(reducedMotion.matches)document.getAnimations().forEach(animation=>animation.finish());});
+reducedMotion.addEventListener('change',()=>{if(reducedMotion.matches)document.getAnimations().forEach(a=>a.finish());});
 function finish(action,payload={}) {
  if(submitting) return;
  submitting=true;
@@ -68,7 +105,7 @@ function finish(action,payload={}) {
  const style=getComputedStyle(panel);
  const from={opacity:style.opacity,transform:style.transform};
  const scrimOpacity=getComputedStyle(scrim).opacity;
- document.getAnimations().forEach(animation=>animation.cancel());
+ document.getAnimations().forEach(a=>a.cancel());
  if(reducedMotion.matches) {Veluno.send(action,payload);return;}
  scrim.animate([{opacity:scrimOpacity},{opacity:0}],{duration:100,fill:'forwards',id:'palette-scrim'});
  const exit=panel.animate([from,{opacity:0,transform:'translateY(-6px) scale(.99)'}],{duration:100,easing:'cubic-bezier(.4,0,1,1)',fill:'forwards',id:'palette-close'});
@@ -82,17 +119,50 @@ function select(index,scroll=true) {
  if(row) { input.setAttribute('aria-activedescendant',row.id); if(scroll) row.scrollIntoView({block:'nearest'}); }
  else input.removeAttribute('aria-activedescendant');
 }
+function commandSuggestions(rawQuery) {
+ const q=rawQuery.slice(1).trim().toLowerCase();
+ const active=state.tabs?.find(t=>t.id===state.active_tab_id);
+ const activeWs=state.workspaces?.find(w=>w.id===state.active_workspace_id);
+ const cmds=[
+  {command:'toggle_rail',title:state.sidebar_rail?'Expand sidebar':'Switch to Compact Icon Rail',detail:'Toggle 58px icon rail sidebar',kbd:'Ctrl+Alt+R'},
+  {command:'toggle_sidebar',title:state.sidebar_collapsed?'Exit floating compact mode':'Enter floating compact mode',detail:'Hide sidebar until edge hover',kbd:'Ctrl+Shift+B'},
+  {command:'toggle_pin',payload:{id:state.active_tab_id},title:active?.is_pinned?'Unpin current tab':'Pin current tab',detail:'Keep tab pinned in workspace'},
+  !activeWs?.private&&active?{command:'toggle_essential',payload:{id:state.active_tab_id},title:active.is_essential?'Remove from Essentials':'Add current tab to Essentials',detail:'Show as global icon tile at top of sidebar'}:null,
+  !activeWs?.private?{command:'create_folder',payload:{name:'New Folder',tab_id:state.active_tab_id},title:'New folder with current tab',detail:'Group tabs into a collapsible sidebar folder'}:null,
+  state.split?.length===2?{command:'swap_split',title:'Swap split view panes',detail:'Flip left and right panes',kbd:'Ctrl+Shift+\\'}:null,
+  state.split?.length===2?{command:'unsplit',title:'Close split view',detail:'Return to single pane view'}:null,
+  ...(state.tabs||[]).filter(t=>t.workspace_id===state.active_workspace_id&&t.id!==state.active_tab_id&&!t.is_essential).slice(0,4).map(t=>({
+   command:'split_tab',payload:{id:t.id},title:`Split view with "${t.custom_title||t.title||t.url}"`,detail:'Open side by side with current tab'
+  })),
+  {command:'sleep_inactive_tabs',title:'Sleep background tabs',detail:'Unload inactive unpinned tabs',kbd:'Ctrl+Shift+S'},
+  {command:'new_private_tab',title:'Open new private tab',detail:'InPrivate session (not saved)',kbd:'Ctrl+Shift+N'},
+  {command:'cycle_workspace',payload:{forward:true},title:'Next workspace',detail:'Switch to next workspace',kbd:'Ctrl+Alt+E'},
+  state.side_panel_url?{command:'toggle_side_panel',title:state.side_panel_open?'Hide side web panel':'Show side web panel',detail:'Toggle docked side panel'}:null,
+  active?{command:'toggle_mute',payload:{id:active.id},title:active.is_muted?'Unmute current tab':'Mute current tab',detail:'Toggle tab audio'}:null,
+  {command:'toggle_reader',title:'Toggle reader view',detail:'Clean reading layout for articles',kbd:'F9'},
+  {command:'reload_fresh',title:'Reload fresh site files',detail:'Bypass cached assets and reload',kbd:'Ctrl+Shift+R'},
+  {command:'toggle_downloads',title:'Toggle downloads',detail:'Show recent downloads',kbd:'Ctrl+J'},
+  {command:'open_history',title:'Open history and bookmarks',detail:'Browse saved history and bookmarks',kbd:'Ctrl+H'},
+  {command:'open_settings',title:'Open Settings',detail:'Configure sidebar, privacy, search, and shortcuts'},
+ ].filter(Boolean);
+ const words=q.split(/\s+/).filter(Boolean);
+ return cmds.filter(c=>words.every(w=>(c.title+' '+c.detail).toLowerCase().includes(w)));
+}
 function render() {
- options=Veluno.suggestions(input.value,state,historyEntries);
+ const val=input.value;
+ const isCmd=val.trimStart().startsWith('>');
+ document.getElementById('footer-enter').textContent=isCmd?'Run':'Open';
+ document.getElementById('cmd-mode-btn').hidden=isCmd;
+ options=isCmd?commandSuggestions(val.trimStart()):Veluno.suggestions(val,state,historyEntries);
  results.replaceChildren();
  options.forEach((option,index)=>{
   const row=document.createElement('div'); row.id='new-tab-option-'+index; row.className='option'; row.setAttribute('role','option');
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('aria-hidden','true');
   const path=document.createElementNS(svg.namespaceURI,'path');
-  path.setAttribute('d',option.search?'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm5 12 6 6':option.id?'M4 5h16v14H4zM4 9h16':option.history?'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4v5l3 2':option.bookmark?'m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z':'M5 12h14m-6-6 6 6-6 6');
+  path.setAttribute('d',option.command?'M5 12h14m-6-6 6 6-6 6':option.search?'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm5 12 6 6':option.id?'M4 5h16v14H4zM4 9h16':option.history?'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4v5l3 2':option.bookmark?'m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z':'M5 12h14m-6-6 6 6-6 6');
   svg.append(path);
   const icon=document.createElement('span'); icon.className='option-icon'; icon.setAttribute('aria-hidden','true'); icon.append(svg);
-  if(!option.search) {
+  if(!option.search&&!option.command) {
    try {
     const site=new URL(option.url);
     if(['https:','http:'].includes(site.protocol)) {
@@ -111,8 +181,9 @@ function render() {
   const title=document.createElement('span'); title.className='option-title'; title.textContent=option.title;
   const detail=document.createElement('span'); detail.className='option-detail'; detail.textContent=option.detail;
   text.append(title,detail); row.append(icon,text);
+  if(option.kbd) { const k=document.createElement('kbd'); k.className='option-kbd'; k.textContent=option.kbd; row.append(k); }
   row.onpointermove=()=>{if(!submitting&&selected!==index)select(index,false);};
-  row.onmousedown=event=>event.preventDefault(); row.onclick=()=>{select(index);submit();};
+  row.onmousedown=e=>e.preventDefault(); row.onclick=()=>{select(index);submit();};
   results.append(row);
  });
  input.setAttribute('aria-expanded',String(options.length>0));
@@ -124,33 +195,43 @@ function submit() {
  if(submitting||composing) return;
  const option=options[selected];
  if(!option) return;
+ if(option.command) { finish(option.command, option.payload||{}); return; }
  finish(option.id?'switch_tab':'submit_new_tab',option.id?{id:option.id}:{url:option.url});
 }
-window.openNewTab=(browserState,recentHistory=browserState?.history||historyEntries)=>{
- const interrupted=panel.getAnimations().some(animation=>animation.id.startsWith('palette-')&&animation.playState!=='finished');
+window.openNewTab=(browserState,recentHistory=browserState?.history||historyEntries,seed='')=>{
+ const interrupted=panel.getAnimations().some(a=>a.id.startsWith('palette-')&&a.playState!=='finished');
  const from=interrupted?{opacity:getComputedStyle(panel).opacity,transform:getComputedStyle(panel).transform}:{opacity:.6,transform:'translateY(-12px) scale(.985)'};
  const scrimOpacity=interrupted?getComputedStyle(scrim).opacity:0;
- document.getAnimations().forEach(animation=>animation.cancel());
+ document.getAnimations().forEach(a=>a.cancel());
  state=browserState||{tabs:[],workspaces:[],shortcuts:[]};
  historyEntries=Array.isArray(recentHistory)?recentHistory:[];
- input.value=''; input.readOnly=false; submitting=false; composing=false; render(); input.focus();
+ const ws=(state.workspaces||[]).find(w=>w.id===state.active_workspace_id);
+ const chip=document.getElementById('ws-chip');
+ if(ws) { chip.hidden=false; chip.textContent=(ws.emoji?ws.emoji+' ':'')+ws.name; } else chip.hidden=true;
+ input.value=typeof seed==='string'?seed:''; input.readOnly=false; submitting=false; composing=false; render(); input.focus();
+ if(input.value) input.setSelectionRange(input.value.length,input.value.length);
  if(!reducedMotion.matches) {
   scrim.animate([{opacity:scrimOpacity},{opacity:1}],{duration:220,easing:'cubic-bezier(.2,0,0,1)',id:'palette-scrim'});
   panel.animate([from,{opacity:1,transform:'translateY(0) scale(1)'}],{duration:280,easing:'cubic-bezier(.16,1,.3,1)',id:'palette-open'});
  }
 };
+document.getElementById('cmd-mode-btn').onclick=()=>{ input.value='> '; render(); input.focus(); input.setSelectionRange(2,2); };
 input.addEventListener('compositionstart',()=>{composing=true;});
 input.addEventListener('compositionend',()=>{composing=false;});
 input.oninput=()=>{if(!submitting)render();};
-document.getElementById('new-tab-form').onsubmit=event=>{event.preventDefault();submit();};
+document.getElementById('new-tab-form').onsubmit=e=>{e.preventDefault();submit();};
 document.getElementById('dismiss').onclick=dismiss;
-document.body.onmousedown=event=>{if(event.target===document.body)dismiss();};
-window.addEventListener('keydown',event=>{
- if(event.isComposing) return;
- if(event.key==='Escape'||(event.ctrlKey&&event.key.toLowerCase()==='w')) {event.preventDefault();dismiss();}
- else if(event.ctrlKey&&['t','l'].includes(event.key.toLowerCase())) {event.preventDefault();if(submitting)window.openNewTab(state);input.focus();input.select();}
- else if(['ArrowDown','ArrowUp'].includes(event.key)&&options.length) {event.preventDefault();select((selected+(event.key==='ArrowDown'?1:-1)+options.length)%options.length);input.focus();}
- else if(event.key==='Tab') {event.preventDefault();(document.activeElement===input?document.getElementById('dismiss'):input).focus();}
+document.body.onmousedown=e=>{if(e.target===document.body)dismiss();};
+window.addEventListener('keydown',e=>{
+ if(e.isComposing) return;
+ if(e.key==='Escape'||(e.ctrlKey&&e.key.toLowerCase()==='w')) {e.preventDefault();dismiss();}
+ else if(e.ctrlKey&&['t','l','k'].includes(e.key.toLowerCase())) {
+  e.preventDefault();
+  if(e.key.toLowerCase()==='k') { input.value='> '; render(); input.focus(); input.setSelectionRange(2,2); }
+  else { if(submitting)window.openNewTab(state); input.focus(); input.select(); }
+ }
+ else if(['ArrowDown','ArrowUp'].includes(e.key)&&options.length) {e.preventDefault();select((selected+(e.key==='ArrowDown'?1:-1)+options.length)%options.length);input.focus();}
+ else if(e.key==='Tab') {e.preventDefault();(document.activeElement===input?document.getElementById('dismiss'):input).focus();}
 });
 </script>
 </body>
