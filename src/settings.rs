@@ -40,6 +40,10 @@ pub struct Settings {
     pub sidebar_right: bool,
     pub data_saver: bool,
     pub performance_mode: bool,
+    pub sidebar_width: f64,
+    pub sidebar_rail: bool,
+    pub workspace_themes: bool,
+    pub essentials_glow: bool,
 }
 
 impl Default for Settings {
@@ -56,6 +60,10 @@ impl Default for Settings {
             sidebar_right: false,
             data_saver: false,
             performance_mode: false,
+            sidebar_width: 260.0,
+            sidebar_rail: false,
+            workspace_themes: true,
+            essentials_glow: true,
         }
     }
 }
@@ -91,6 +99,15 @@ pub fn engine() -> (&'static str, &'static str) {
 /// Whether the sidebar sits on the right edge of the window.
 pub fn sidebar_right() -> bool {
     crate::profile::lock(current()).sidebar_right
+}
+
+pub fn sidebar_width() -> f64 {
+    let w = crate::profile::lock(current()).sidebar_width;
+    if w.is_finite() {
+        w.clamp(200.0, 380.0)
+    } else {
+        crate::ui::SIDEBAR_WIDTH_EXPANDED
+    }
 }
 
 pub fn accent() -> &'static str {
@@ -151,6 +168,12 @@ pub fn set(key: &str, value: &Value) -> Result<Settings, String> {
         ("save_passwords", Value::Bool(on)) => settings.save_passwords = *on,
         ("autofill", Value::Bool(on)) => settings.autofill = *on,
         ("sidebar_right", Value::Bool(on)) => settings.sidebar_right = *on,
+        ("sidebar_rail", Value::Bool(on)) => settings.sidebar_rail = *on,
+        ("workspace_themes", Value::Bool(on)) => settings.workspace_themes = *on,
+        ("essentials_glow", Value::Bool(on)) => settings.essentials_glow = *on,
+        ("sidebar_width", Value::Number(n)) if n.as_f64().is_some_and(f64::is_finite) => {
+            settings.sidebar_width = n.as_f64().unwrap_or(260.0).clamp(200.0, 380.0);
+        }
         ("data_saver", Value::Bool(on)) => settings.data_saver = *on,
         ("performance_mode", Value::Bool(on)) => settings.performance_mode = *on,
         ("accent", Value::String(id)) if ACCENTS.iter().any(|(key, ..)| key == id) => {
@@ -195,6 +218,10 @@ mod tests {
         assert!(!settings.sidebar_right);
         assert!(!settings.data_saver);
         assert!(!settings.performance_mode);
+        assert_eq!(settings.sidebar_width, 260.0);
+        assert!(!settings.sidebar_rail);
+        assert!(settings.workspace_themes);
+        assert!(settings.essentials_glow);
     }
 
     #[test]

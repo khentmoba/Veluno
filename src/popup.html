@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <title>Veluno Popup</title>
 <style>
-:root { color-scheme:dark; --bg:#16161a; --surface:#222228; --hover:#2f2f38; --line:#3f3f49; --text:#f8f8fa; --muted:#c8c8d2; --accent:#dedee3; font-family:"Segoe UI",system-ui,sans-serif; }
+:root { color-scheme:dark; --bg:#101011; --surface:rgb(255 255 255 / .055); --hover:rgb(255 255 255 / .09); --line:rgb(255 255 255 / .09); --text:#f4f4f7; --muted:#a6a6b3; --accent:#dedee3; font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif; }
 * { box-sizing:border-box; }
 html,body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--text); user-select:none; }
-.bar { position:relative; min-height:42px; display:flex; align-items:center; gap:8px; padding:5px 10px; border-bottom:1px solid var(--line); }
-.pill { flex:1; min-width:0; min-height:30px; display:flex; align-items:center; gap:8px; padding:4px 6px 4px 10px; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:inset 0 1px 0 rgb(255 255 255 / .05); }
+.bar { position:relative; min-height:42px; display:flex; align-items:center; gap:6px; padding:5px 8px; }
+.pill { flex:1; min-width:0; min-height:30px; display:flex; align-items:center; gap:8px; padding:4px 6px 4px 10px; background:var(--surface); border:1px solid var(--line); border-radius:9px; }
 .pill>svg { width:14px; height:14px; color:var(--muted); flex-shrink:0; }
 #address { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; line-height:1.25; font-weight:500; color:var(--text); user-select:text; }
 button { width:24px; height:24px; border:0; border-radius:6px; background:none; color:var(--muted); display:grid; place-items:center; cursor:pointer; flex-shrink:0; }
