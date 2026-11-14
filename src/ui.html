@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Veluno</title>
 <style>
+/* Registered so a workspace switch fades the tint instead of snapping it. */
+@property --ws-accent { syntax:'<color>'; inherits:true; initial-value:#dedee3; }
+@property --ws-tint { syntax:'<number>'; inherits:true; initial-value:0; }
 :root {
  color-scheme: dark;
  --bg:#101011;
@@ -20,6 +23,7 @@
  --accent:#dedee3;
  --ws-accent:#dedee3;
  --ws-tint:0;
+ transition:--ws-accent 260ms ease, --ws-tint 260ms ease;
  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
  font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif;
  font-size:13px;
@@ -46,7 +50,6 @@ body {
  border:1px solid color-mix(in srgb, var(--line-strong) calc(var(--float) * 100%), transparent);
  border-radius:calc(14px * var(--float));
  box-shadow:0 16px 40px rgb(0 0 0 / calc(.65 * var(--float)));
- transition:background-image 260ms ease;
 }
 /* Zen-style film grain over the workspace gradient, under all content. */
 body::before {
@@ -1003,30 +1006,39 @@ function renderTabs() {
 // Zen-style list motion: rows glide from where they were, so closing, opening and reordering
 // tabs moves the list instead of jumping. Skipped on workspace switches, while filtering, and
 // for reduced motion.
+// The list is rebuilt whenever a title, icon or loading state changes, which happens right after
+// a tab opens. Running motion is carried over to the new rows so a rebuild never cuts it short,
+// and glides add up, so a second move during a glide continues from where the row is.
 let flipWorkspace=null;
+const tabMotion={duration:220,easing:'cubic-bezier(.2,.8,.2,1)',id:'tab-motion'};
+const rowTop=row=>{ const rect=row.getBoundingClientRect(), t=getComputedStyle(row).transform; return rect.height?rect.top-(t==='none'?0:new DOMMatrix(t).m42):null; };
 function captureTabRows(query) {
  const workspace=currentState.active_workspace_id, sameWorkspace=flipWorkspace===workspace;
  flipWorkspace=workspace;
  if(reducedMotion.matches||query||!sameWorkspace) return null;
  const rows=new Map();
  for(const row of document.querySelectorAll('section.tabs .tab[data-tab-id]')) {
-  const rect=row.getBoundingClientRect();
-  if(rect.height) rows.set(row.dataset.tabId,rect.top);
+  const top=rowTop(row);
+  if(top===null) continue;
+  const running=row.getAnimations().filter(a=>a.id==='tab-motion'&&a.playState==='running')
+   .map(a=>({keyframes:a.effect.getKeyframes(),composite:a.effect.composite,time:a.currentTime}));
+  rows.set(row.dataset.tabId,{top,running});
  }
  return rows;
 }
 function playTabRows(before) {
  if(!before) return;
  for(const row of document.querySelectorAll('section.tabs .tab[data-tab-id]')) {
-  const rect=row.getBoundingClientRect();
-  if(!rect.height) continue;
-  const top=before.get(row.dataset.tabId);
-  if(top===undefined) {
-   row.animate([{opacity:0,transform:'translateX(-10px) scale(.97)'},{opacity:1,transform:'none'}],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'});
+  const top=rowTop(row);
+  if(top===null) continue;
+  const prev=before.get(row.dataset.tabId);
+  if(!prev) {
+   row.animate([{opacity:0,transform:'translateX(-10px) scale(.97)'},{opacity:1,transform:'none'}],tabMotion);
    continue;
   }
-  const dy=top-rect.top;
-  if(Math.abs(dy)>1) row.animate([{transform:`translateY(${dy}px)`},{transform:'none'}],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'});
+  for(const {keyframes,composite,time} of prev.running) row.animate(keyframes,{...tabMotion,composite}).currentTime=time;
+  const dy=prev.top-top;
+  if(Math.abs(dy)>1) row.animate([{transform:`translateY(${dy}px)`},{transform:'translateY(0)'}],{...tabMotion,composite:'add'});
  }
 }
 
