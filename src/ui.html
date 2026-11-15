@@ -125,20 +125,23 @@ body.rail #btn-toggle-rail svg { transform:scaleX(-1); }
  position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:25;
  max-height:min(360px, calc(100vh - 130px)); overflow:auto; overscroll-behavior:contain;
  scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent;
- padding:5px; transform-origin:top center; background:var(--surface-pop);
- border:1px solid var(--line-strong); border-radius:11px; box-shadow:0 18px 44px rgb(0 0 0 / .68);
+ padding:5px; transform-origin:top center; background:#18181c;
+ border:1px solid rgb(255 255 255 / .14); border-radius:11px; box-shadow:0 18px 44px rgb(0 0 0 / .72);
 }
 .address-option { display:flex; align-items:center; gap:9px; min-height:36px; padding:0 8px; border-radius:7px; cursor:pointer; font-size:13px; }
-.address-option[aria-selected="true"] { background:var(--active); box-shadow:inset 0 1px 0 rgb(255 255 255 / .08); }
+.address-option[aria-selected="true"] { background:color-mix(in srgb, #5e81ac 32%, rgb(255 255 255 / .08)); box-shadow:inset 0 1px 0 rgb(255 255 255 / .1); }
 .address-option svg { width:15px; height:15px; color:var(--muted); }
 .address-option-icon { width:16px; height:16px; flex-shrink:0; display:grid; place-items:center; }
 .address-option-icon>* { grid-area:1/1; }
 .address-option-icon img { width:16px; height:16px; object-fit:contain; border-radius:3px; }
-.address-option-text { min-width:0; flex:1; display:flex; align-items:center; white-space:nowrap; }
+.address-option-text { min-width:0; flex:1; display:flex; align-items:baseline; white-space:nowrap; overflow:hidden; }
 .address-option-title, .address-option-detail { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
-.address-option-title { min-width:40px; flex:0 1 auto; font-weight:500; color:var(--text); }
-.address-option-detail { flex:0 0 auto; max-width:calc(100% - 40px); color:var(--muted); font-size:12px; }
-.address-option-detail::before { content:'\2014'; margin:0 5px; }
+.address-option-title { min-width:56px; flex:0 1 auto; font-weight:500; color:#ededf2; }
+.address-option-detail { flex:1 1 auto; min-width:0; color:#9a9aa6; font-size:12px; }
+.address-option-detail::before { content:'\2014'; margin:0 5px; opacity:.6; }
+.address-option[aria-selected="true"] .address-option-title { color:#fff; font-weight:600; }
+.address-option[aria-selected="true"] .address-option-detail { color:#d4d8e0; }
+.address-option mark { background:none; color:#fff; font-weight:700; }
 
 /* Zen Essentials Grid */
 .essentials-grid {
@@ -198,7 +201,7 @@ body.essentials-glow .essential.active .essential-surface {
  flex:1; min-width:0; display:flex; align-items:center; gap:7px; padding:2px 0;
  text-align:left; color:var(--muted); font-weight:600; font-size:12px;
 }
-.workspace-indicator-main:hover { background:none; color:var(--text); }
+.workspace-indicator-main:hover:not(:disabled) { background:transparent; color:var(--text); }
 .workspace-icon-stack { width:16px; height:16px; display:grid; place-items:center; flex-shrink:0; color:var(--ws-accent); }
 .workspace-icon-stack svg { width:14px; height:14px; }
 .workspace-chevron { display:none; transition:transform 160ms ease; color:var(--muted); }
@@ -296,7 +299,7 @@ body:hover .pinned-separator .sep-clear, .pinned-separator:focus-within .sep-cle
  min-width:0; display:flex; gap:9px; align-items:center; flex:1; text-align:left;
  height:36px; padding:0 6px 0 8px; border-radius:8px; position:relative;
 }
-.tab-main:hover { background:transparent; }
+.tab-main:hover:not(:disabled) { background:transparent; }
 .favicon { width:16px; height:16px; flex-shrink:0; display:grid; place-items:center; color:var(--muted); position:relative; }
 .favicon svg { width:14px; height:14px; }
 .favicon img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; border-radius:3px; filter:drop-shadow(0 0 1px rgb(255 255 255 / .55)); }
@@ -321,7 +324,7 @@ body:hover .pinned-separator .sep-clear, .pinned-separator:focus-within .sep-cle
 .close-tab svg, .unload-tab svg { width:13px; height:13px; }
 .tab:hover .close-tab, .tab:focus-within .close-tab, .tab.active:hover .close-tab,
 .tab:hover .unload-tab, .tab:focus-within .unload-tab { opacity:1; }
-.close-tab:hover, .unload-tab:hover { background:rgb(255 255 255 / .14); color:var(--text); }
+.close-tab:hover:not(:disabled), .unload-tab:hover:not(:disabled) { background:rgb(255 255 255 / .14); color:var(--text); }
 .audio-toggle { width:22px; height:22px; flex-shrink:0; display:grid; place-items:center; color:var(--text); border-radius:5px; }
 .audio-toggle svg { width:13px; height:13px; }
 .tab-loading {
@@ -1347,6 +1350,12 @@ function addressOptionIcon(option) {
  }
  return container;
 }
+function renderHighlighted(el,value,query) {
+ el.replaceChildren(...Veluno.highlightTerms(value,query).map(part=>{
+  if(!part.match) return document.createTextNode(part.text);
+  const mark=document.createElement('mark'); mark.textContent=part.text; return mark;
+ }));
+}
 function renderAddressResults() {
  addressQuery=$('url-input').value;
  addressOptions=Veluno.suggestions(addressQuery,currentState,addressHistory);
@@ -1354,9 +1363,16 @@ function renderAddressResults() {
  addressOptions.forEach((option,index)=>{
   const row=document.createElement('div'); row.id='address-option-'+index; row.className='address-option'; row.setAttribute('role','option');
   const text=document.createElement('span'); text.className='address-option-text';
-  const title=document.createElement('span'); title.className='address-option-title'; title.textContent=option.title; text.append(title);
-  const note=Veluno.suggestionDetail(option);
-  if(note) { const detail=document.createElement('span'); detail.className='address-option-detail'; detail.textContent=note; text.append(detail); }
+  const title=document.createElement('span'); title.className='address-option-title';
+  renderHighlighted(title,option.title,addressQuery);
+  text.append(title);
+  const clean=option.url&&!option.search?Veluno.cleanUrl(option.url):'';
+  const note=clean&&clean!==option.title?clean:Veluno.suggestionDetail(option);
+  if(note) {
+   const detail=document.createElement('span'); detail.className='address-option-detail';
+   renderHighlighted(detail,note,option.search?'':addressQuery);
+   text.append(detail);
+  }
   row.append(addressOptionIcon(option),text);
   row.onpointermove=()=>selectAddressOption(index,false);
   row.onmousedown=e=>e.preventDefault();

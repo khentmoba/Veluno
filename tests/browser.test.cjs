@@ -106,6 +106,13 @@ assert.ok(suggest('github',crowded).some(option=>option.search),'Keep an explici
 assert.equal(suggest('',{shortcuts:sources.shortcuts})[0].title,'YouTube');
 assert.equal(suggest('no match',sources).length,1);
 assert.equal(suggest('github.com',{})[0].url,'https://github.com');
+assert.equal(suggest('github.com',{})[0].title,'github.com','Unknown explicit addresses use a clean host/path title');
+assert.equal(suggest('youtube.com/',{shortcuts:[{title:'YouTube',url:'https://www.youtube.com/'}]})[0].title,'YouTube','Explicit addresses reuse known site titles');
+assert.equal(window.Veluno.cleanUrl('https://www.youtube.com/'),'youtube.com');
+assert.equal(window.Veluno.cleanUrl('https://www.youtube.com/@t3dotgg'),'youtube.com/@t3dotgg');
+assert.equal(window.Veluno.cleanUrl('https://youtube.com/?v=1'),'youtube.com/?v=1');
+assert.equal(window.Veluno.cleanUrl('http://localhost:5173/dev'),'localhost:5173/dev');
+assert.equal(window.Veluno.highlightTerms('Theo - t3.gg - YouTube','youtube theo').map(p=>p.match?'['+p.text+']':p.text).join(''),'[Theo] - t3.gg - [YouTube]');
 assert.equal(suggest('',{shortcuts:Array.from({length:12},(_,i)=>({title:String(i),url:'https://example.com/'+i}))}).length,8);
 const changing={tabs:[{id:70,title:'GitHub',url:'https://github.com',workspace_id:1,favicon:'old'}],workspaces:[{id:1,name:'Work'},{id:2,name:'Personal'}]};
 assert.equal(suggest('git',changing)[0].id,70);
