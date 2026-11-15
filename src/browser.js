@@ -112,7 +112,15 @@
      seen.add(norm(target));
     } else if(target) {
      const search=target===Veluno.searchUrl+encodeURIComponent(query);
-     fallback={option:{title:query,detail:search?'Search with '+Veluno.searchName.replace(/ Search$/,''):'Open in a new tab',url:target,search},score:search?60:110};
+     let fallbackTitle=query;
+     if(!search) {
+      const targetClean=cleanUrl(target).toLowerCase();
+      const targetNorm=norm(target);
+      const match=[...(state.tabs||[]),...(state.bookmarks||[]),...(historyEntries||[]),...(state.shortcuts||[])]
+       .find(e=>e?.url&&e.title&&(norm(e.url)===targetNorm||cleanUrl(e.url).toLowerCase()===targetClean));
+      fallbackTitle=match?.title||cleanUrl(target)||query;
+     }
+     fallback={option:{title:fallbackTitle,detail:search?'Search with '+Veluno.searchName.replace(/ Search$/,''):'Open in a new tab',url:target,search},score:search?60:110};
      seen.add(norm(target));
     }
     let tabCount=0;
@@ -187,7 +195,51 @@
     }
     return total > 0 ? received / total : null;
   }
-  window.Veluno = { send, resolveAddress, suggestions, suggestionDetail, highlight, downloadSummary, downloadProgress, displayAddress, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
+  function cleanUrl(url) {
+    if (!url) return '';
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return url;
+      const host = parsed.hostname.replace(/^www\./i, '');
+      const port = parsed.port ? ':' + parsed.port : '';
+      const path = parsed.pathname === '/' && !parsed.search && !parsed.hash ? '' : parsed.pathname;
+      return host + port + path + parsed.search + parsed.hash;
+    } catch {
+      return String(url).replace(/^https?:\/\/(?:www\.)?/i, '').replace(/\/+$/, '');
+    }
+  }
+  function highlightTerms(text, query) {
+    const value = String(text ?? '');
+    const terms = String(query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return [{ text: value, match: false }];
+    const lower = value.toLowerCase();
+    const ranges = [];
+    for (const term of terms) {
+      let at = lower.indexOf(term);
+      while (at >= 0) {
+        ranges.push([at, at + term.length]);
+        at = lower.indexOf(term, at + term.length);
+      }
+    }
+    if (!ranges.length) return [{ text: value, match: false }];
+    ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+    const merged = [ranges[0]];
+    for (let i = 1; i < ranges.length; i++) {
+      const prev = merged[merged.length - 1];
+      if (ranges[i][0] <= prev[1]) prev[1] = Math.max(prev[1], ranges[i][1]);
+      else merged.push(ranges[i]);
+    }
+    const parts = [];
+    let index = 0;
+    for (const [start, end] of merged) {
+      if (start > index) parts.push({ text: value.slice(index, start), match: false });
+      parts.push({ text: value.slice(start, end), match: true });
+      index = end;
+    }
+    if (index < value.length) parts.push({ text: value.slice(index), match: false });
+    return parts;
+  }
+  window.Veluno = { send, resolveAddress, suggestions, suggestionDetail, highlight, highlightTerms, cleanUrl, downloadSummary, downloadProgress, displayAddress, keywords, navigate: url => send('navigate', { url }), searchUrl: 'https://search.brave.com/search?q=', searchName: 'Brave Search' };
   const postShortcut = post;
   const stringify = JSON.stringify;
   window.addEventListener('keydown', event => {

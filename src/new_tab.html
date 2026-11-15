@@ -44,18 +44,22 @@ form:focus-within { border-bottom-color:color-mix(in srgb, var(--accent) 55%, tr
 .close:hover { background:rgb(255 255 255 / .11); color:white; }
 .close:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .results { padding:6px; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:rgb(255 255 255 / .2) transparent; }
-.option { display:flex; align-items:center; gap:12px; padding:9px 12px; min-height:52px; border-radius:9px; cursor:pointer; }
-.option[aria-selected="true"] { background:rgb(255 255 255 / .11); box-shadow:inset 0 1px 0 rgb(255 255 255 / .08); }
-.option-icon { width:18px; height:18px; flex-shrink:0; display:grid; place-items:center; }
-.option-icon svg,.option-icon img { grid-area:1/1; width:18px; height:18px; }
+.option { display:flex; align-items:center; gap:11px; padding:8px 12px; min-height:40px; border-radius:9px; cursor:pointer; }
+.option[aria-selected="true"] { background:color-mix(in srgb, #5e81ac 32%, rgb(255 255 255 / .08)); box-shadow:inset 0 1px 0 rgb(255 255 255 / .11); }
+.option-icon { width:16px; height:16px; flex-shrink:0; display:grid; place-items:center; }
+.option-icon svg,.option-icon img { grid-area:1/1; width:16px; height:16px; }
 .option-icon img { object-fit:contain; border-radius:3px; filter:drop-shadow(0 0 1px rgb(255 255 255 / .55)); }
-.option-text { min-width:0; flex:1; }
-.option-title,.option-detail { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.option-title { font-size:14px; font-weight:500; line-height:1.45; color:#f8f8fa; }
-.option-detail { color:var(--muted); font-size:12px; line-height:1.4; }
+.option-text { min-width:0; flex:1; display:flex; align-items:baseline; white-space:nowrap; overflow:hidden; }
+.option-title,.option-detail { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.option-title { flex:0 1 auto; min-width:56px; font-size:13.5px; font-weight:500; line-height:1.45; color:#ededf2; }
+.option-detail { flex:1 1 auto; color:#9a9aa6; font-size:13px; line-height:1.4; }
+.option-detail::before { content:'\2014'; margin:0 6px; opacity:.55; }
+.option[aria-selected="true"] .option-title { color:#ffffff; font-weight:600; }
+.option[aria-selected="true"] .option-detail { color:#d4d8e0; }
+.option mark { background:none; color:#ffffff; font-weight:700; }
 .option-kbd {
  font:500 11px "Segoe UI",system-ui,sans-serif; color:var(--muted);
- background:rgb(255 255 255 / .06); border:1px solid var(--line); padding:2px 7px; border-radius:5px; white-space:nowrap;
+ background:rgb(255 255 255 / .06); border:1px solid var(--line); padding:2px 7px; border-radius:5px; white-space:nowrap; flex-shrink:0;
 }
 .empty { margin:0; padding:16px 16px 20px; font-size:13px; color:var(--muted); line-height:1.55; }
 footer { border-top:1px solid var(--line); background:rgb(0 0 0 / .22); display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:10px 16px; font-size:11.5px; color:var(--muted); flex-shrink:0; }
@@ -151,9 +155,16 @@ function commandSuggestions(rawQuery) {
  return cmds.filter(c=>words.every(w=>(c.title+' '+c.detail).toLowerCase().includes(w)));
 }
 const COMMAND_ICONS={copy_url:'M9 9h11v11H9zM5 15H4V4h11v1',create_folder:'M3 6h6l2 2h10v11H3zM12 11v5m-2.5-2.5h5',cycle_workspace:'M4 8h14l-3-3M20 16H6l3 3',new_private_tab:'M3 11c3-3 15-3 18 0M5 11l1.5-5h11l1.5 5M8.5 18a2.5 2.5 0 1 0 0-.01M15.5 18a2.5 2.5 0 1 0 0-.01M11 17.5h2',open_history:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4v5l3 2',open_settings:'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM12 2.5v3m0 13v3M2.5 12h3m13 0h3M5.3 5.3l2.1 2.1m9.2 9.2 2.1 2.1M5.3 18.7l2.1-2.1m9.2-9.2 2.1-2.1',reload_fresh:'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5',sleep_inactive_tabs:'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z',split_recent:'M3 4h18v16H3zM12 4v16',split_tab:'M3 4h18v16H3zM12 4v16',swap_split:'M4 8h16l-3-3M20 16H4l3 3',unsplit:'M3 4h18v16H3zM9 10l6 4m0-4-6 4',toggle_downloads:'M12 3v12m-5-5 5 5 5-5M4 20h16',toggle_essential:'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9Z',toggle_mute:'M4 9h4l5-4v14l-5-4H4zM17 9l4 6m0-6-4 6',toggle_pin:'M9 3h6l-1 6 3 3H7l3-3ZM12 12v9',toggle_rail:'M3 4h18v16H3zM8 4v16',toggle_reader:'M4 5c3-1 6-1 8 1 2-2 5-2 8-1v14c-3-1-6-1-8 1-2-2-5-2-8-1zM12 6v14',toggle_side_panel:'M3 4h18v16H3zM15 4v16',toggle_sidebar:'M3 4h18v16H3zM9 4v16'};
+function renderHighlighted(el,value,query) {
+ el.replaceChildren(...Veluno.highlightTerms(value,query).map(part=>{
+  if(!part.match) return document.createTextNode(part.text);
+  const mark=document.createElement('mark'); mark.textContent=part.text; return mark;
+ }));
+}
 function render() {
  const val=input.value;
  const isCmd=val.trimStart().startsWith('>');
+ const query=isCmd?val.trimStart().slice(1).trim():val;
  document.getElementById('footer-enter').textContent=isCmd?'Run':'Open';
  document.getElementById('cmd-mode-btn').hidden=isCmd;
  options=isCmd?commandSuggestions(val.trimStart()):Veluno.suggestions(val,state,historyEntries);
@@ -181,10 +192,19 @@ function render() {
    } catch {}
   }
   const text=document.createElement('span'); text.className='option-text';
-  const title=document.createElement('span'); title.className='option-title'; title.textContent=option.title;
-  const detail=document.createElement('span'); detail.className='option-detail'; detail.textContent=option.detail;
-  text.append(title,detail); row.append(icon,text);
+  const title=document.createElement('span'); title.className='option-title';
+  renderHighlighted(title,option.title,query);
+  text.append(title);
+  const clean=!option.command&&!option.search&&option.url?Veluno.cleanUrl(option.url):'';
+  const detailText=option.command?option.detail:option.search?option.detail:(clean&&clean!==option.title?clean:(option.id==null?Veluno.suggestionDetail(option):''));
+  if(detailText) {
+   const detail=document.createElement('span'); detail.className='option-detail';
+   renderHighlighted(detail,detailText,option.command||option.search?'':query);
+   text.append(detail);
+  }
+  row.append(icon,text);
   if(option.kbd) { const k=document.createElement('kbd'); k.className='option-kbd'; k.textContent=option.kbd; row.append(k); }
+  else if(option.id!=null) { const badge=document.createElement('span'); badge.className='option-kbd'; badge.textContent='Switch to tab'; row.append(badge); }
   row.onpointermove=()=>{if(!submitting&&selected!==index)select(index,false);};
   row.onmousedown=e=>e.preventDefault(); row.onclick=()=>{select(index);submit();};
   results.append(row);
